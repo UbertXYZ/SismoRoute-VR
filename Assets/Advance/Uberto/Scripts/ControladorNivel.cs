@@ -1,15 +1,16 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-public sealed class ControladorNivel : MonoBehaviour
+public class ControladorNivel : MonoBehaviour
 {
     [Header("Pantalla de carga")]
     [SerializeField] private GameObject canvas;
     [SerializeField] private GameObject imagenCargando;
     [SerializeField, Min(0f)] private float esperaAntesDeDesvanecer = 3f;
     [SerializeField, Min(0.01f)] private float duracionDesvanecimiento = 1f;
-
+    [SerializeField] public List<GameObject> bloqueos = new List<GameObject>();
     [Header("Sismo")]
     [SerializeField] private ControladorInicio controladorInicio;
     [SerializeField] private Transform xrOrigin;
@@ -152,7 +153,10 @@ public sealed class ControladorNivel : MonoBehaviour
         {
             Debug.LogWarning("Asigna un DestinoSismo para teletransportar el XR Origin.", this);
         }
-
+        for (int i = 0; i < bloqueos.Count; i++)
+        {
+            bloqueos[i].SetActive(true);
+        }
         tiempoSismo = 0f;
         if (cronometro != null)
             cronometro.text = "00:00";
