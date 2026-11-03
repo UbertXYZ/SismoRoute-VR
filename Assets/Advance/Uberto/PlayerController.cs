@@ -3,12 +3,14 @@ using UnityEngine.Serialization;
 using UnityEngine.XR.Interaction.Toolkit.Locomotion;
 using UnityEngine.XR.Interaction.Toolkit.Locomotion.Gravity;
 using UnityEngine.XR.Interaction.Toolkit.Locomotion.Movement;
+using UnityEngine.XR;
 
 [DisallowMultipleComponent]
 [RequireComponent(typeof(CharacterController))]
 public sealed class PlayerController : MonoBehaviour
 {
-    private const float FixedControllerHeight = 1.70f;
+    private const float MinimumControllerHeight = 1.20f;
+    private const float MaximumControllerHeight = 2.20f;
 
     [Header("XR Origin")]
     [Tooltip("Transform raíz del XR Origin que debe desplazarse con el CharacterController.")]
@@ -39,6 +41,7 @@ public sealed class PlayerController : MonoBehaviour
 
     private ContinuousMoveProvider moveProvider;
     private float verticalVelocity;
+    private InputDevice headDevice;
     private int lastSideCollisionFrame = -1;
     private Collider lastSideCollider;
     private Vector3 lastSideCollisionNormal;
@@ -74,26 +77,35 @@ public sealed class PlayerController : MonoBehaviour
 
     private void OnEnable()
     {
+        // TrackedPoseDriver sigue siendo la ruta principal. Esta lectura adicional
+        // cubre runtimes OpenXR (incluido Meta Quest) donde alguna acción de pose no
+        // llega al Input System, y aplica posición y rotación reportadas por el HMD.
+        Application.onBeforeRender += ApplyHeadPoseFromXR;
+
         // El proveedor queda desactivado, pero sus lectores se reutilizan para conservar
         // exactamente las acciones de movimiento configuradas para los mandos.
-        if (moveProvider == null)
-            return;
-
-        moveProvider.leftHandMoveInput?.EnableDirectActionIfModeUsed();
-        moveProvider.rightHandMoveInput?.EnableDirectActionIfModeUsed();
+        if (moveProvider != null)
+        {
+            moveProvider.leftHandMoveInput?.EnableDirectActionIfModeUsed();
+            moveProvider.rightHandMoveInput?.EnableDirectActionIfModeUsed();
+        }
     }
 
     private void OnDisable()
     {
-        if (moveProvider == null)
-            return;
+        Application.onBeforeRender -= ApplyHeadPoseFromXR;
 
-        moveProvider.leftHandMoveInput?.DisableDirectActionIfModeUsed();
-        moveProvider.rightHandMoveInput?.DisableDirectActionIfModeUsed();
+        if (moveProvider != null)
+        {
+            moveProvider.leftHandMoveInput?.DisableDirectActionIfModeUsed();
+            moveProvider.rightHandMoveInput?.DisableDirectActionIfModeUsed();
+        }
     }
 
     private void Update()
     {
+        ApplyHeadPoseFromXR();
+
         if (characterController == null || !characterController.enabled)
             return;
 
@@ -215,13 +227,23 @@ public sealed class PlayerController : MonoBehaviour
 
     private void ResolveCharacterController()
     {
-        if (characterController == null)
-            characterController = GetComponent<CharacterController>();
+        // En el XR Origin el CharacterController válido está en la raíz. Una
+        // referencia serializada antigua puede apuntar al controlador de un hijo
+        // inactivo, por eso se prefiere siempre el componente local habilitado.
+        CharacterController localController = GetComponent<CharacterController>();
+        if (localController != null && localController.gameObject.activeInHierarchy)
+        {
+            characterController = localController;
+            return;
+        }
+
+        if (characterController != null && characterController.gameObject.activeInHierarchy)
+            return;
 
         if (characterController == null)
             characterController = GetComponentInParent<CharacterController>();
 
-        if (characterController == null)
+        if (characterController == null || !characterController.gameObject.activeInHierarchy)
             characterController = GetComponentInChildren<CharacterController>();
     }
 
@@ -233,6 +255,64 @@ public sealed class PlayerController : MonoBehaviour
             if (headCamera != null)
                 headTransform = headCamera.transform;
         }
+    }
+
+    /// <summary>
+    /// Aplica la pose del HMD a la cámara del XR Origin. La posición del nodo Head
+    /// está expresada respecto al origen de tracking; TransformPoint la convierte
+    /// a mundo usando el XR Origin, respetando la altura real desde el suelo.
+    /// Se llama desde Update y onBeforeRender para mantener la pose actualizada
+    /// incluso si TrackedPoseDriver no recibe centerEyePosition o centerEyeRotation.
+    /// </summary>
+    private void ApplyHeadPoseFromXR()
+    {
+        if (headTransform == null)
+            ResolveHeadTransform();
+
+        if (headTransform == null)
+            return;
+
+        if (!headDevice.isValid)
+            headDevice = InputDevices.GetDeviceAtXRNode(XRNode.Head);
+
+        if (!headDevice.isValid ||
+            !headDevice.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion headRotation))
+            return;
+
+        // No sobrescribir la pose con datos sin inicializar mientras OpenXR todavía
+        // está iniciando el tracking del visor.
+        if (headDevice.TryGetFeatureValue(CommonUsages.isTracked, out bool isTracked) && !isTracked)
+            return;
+
+        if (TryGetValidHeadPosition(out Vector3 headPosition))
+        {
+            Transform trackingOrigin = xrOriginTransform != null ? xrOriginTransform : transform;
+            headTransform.position = trackingOrigin.TransformPoint(headPosition);
+        }
+
+        if (IsValidRotation(headRotation))
+            headTransform.localRotation = headRotation.normalized;
+    }
+
+    private bool TryGetValidHeadPosition(out Vector3 headPosition)
+    {
+        if (!headDevice.TryGetFeatureValue(CommonUsages.centerEyePosition, out headPosition) &&
+            !headDevice.TryGetFeatureValue(CommonUsages.devicePosition, out headPosition))
+            return false;
+
+        return IsFinite(headPosition.x) && IsFinite(headPosition.y) && IsFinite(headPosition.z);
+    }
+
+    private static bool IsValidRotation(Quaternion rotation)
+    {
+        float magnitude = rotation.x * rotation.x + rotation.y * rotation.y +
+                          rotation.z * rotation.z + rotation.w * rotation.w;
+        return magnitude >= 0.5f && IsFinite(magnitude);
+    }
+
+    private static bool IsFinite(float value)
+    {
+        return !float.IsNaN(value) && !float.IsInfinity(value);
     }
 
     private void ResolveMoveProvider()
@@ -283,8 +363,17 @@ public sealed class PlayerController : MonoBehaviour
         if (characterController == null)
             return;
 
-        characterController.height = FixedControllerHeight;
-        float maximumStepOffset = Mathf.Max(0f, FixedControllerHeight - characterController.radius * 2f);
+        // Room-scale head tracking supplies the user's actual eye height. Keep the
+        // capsule aligned to that height instead of forcing a fixed 1.70 m camera.
+        float controllerHeight = MinimumControllerHeight;
+        if (headTransform != null)
+        {
+            float headHeight = characterController.transform.InverseTransformPoint(headTransform.position).y;
+            controllerHeight = Mathf.Clamp(headHeight + 0.10f, MinimumControllerHeight, MaximumControllerHeight);
+        }
+
+        characterController.height = controllerHeight;
+        float maximumStepOffset = Mathf.Max(0f, controllerHeight - characterController.radius * 2f);
         characterController.stepOffset = Mathf.Min(stepOffset, maximumStepOffset);
     }
 
@@ -298,9 +387,10 @@ public sealed class PlayerController : MonoBehaviour
             return;
 
         Vector3 headPosition = characterController.transform.InverseTransformPoint(headTransform.position);
+        float height = characterController.height;
         characterController.center = new Vector3(
             headPosition.x,
-            FixedControllerHeight * 0.5f + characterController.skinWidth,
+            height * 0.5f + characterController.skinWidth,
             headPosition.z);
     }
 
@@ -332,7 +422,7 @@ public sealed class PlayerController : MonoBehaviour
         float maximumSkinWidth = Mathf.Max(0.01f, characterController.radius * 0.1f);
         characterController.skinWidth = Mathf.Min(skinWidth, maximumSkinWidth);
 
-        float maximumStepOffset = Mathf.Max(0f, FixedControllerHeight - characterController.radius * 2f);
+        float maximumStepOffset = Mathf.Max(0f, characterController.height - characterController.radius * 2f);
         characterController.stepOffset = Mathf.Min(stepOffset, maximumStepOffset);
     }
 
