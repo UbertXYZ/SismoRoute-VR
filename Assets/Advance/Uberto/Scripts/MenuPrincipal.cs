@@ -13,7 +13,7 @@ public sealed class MenuPrincipal : MonoBehaviour
 
     private InputAction alternarMenuAction;
     private GameObject menuRoot;
-    private Button botonIniciarSismo;
+    //private Button botonIniciarSismo;
 
     private void Awake()
     {
@@ -123,7 +123,7 @@ public sealed class MenuPrincipal : MonoBehaviour
 
         CrearTexto("Titulo", "MENÚ PRINCIPAL", panel.transform, 30, new Vector2(0f, 165f), new Vector2(420f, 60f), FontStyle.Bold);
 
-        botonIniciarSismo = CrearBoton("BotonIniciarSismo", "Iniciar Sismo", panel.transform, 70f, IniciarSismo);
+        //botonIniciarSismo = CrearBoton("BotonIniciarSismo", "Iniciar Sismo", panel.transform, 70f, IniciarSismo);
         CrearBoton("BotonCerrarMenu", "Cerrar Menú", panel.transform, -15f, CerrarMenu);
         CrearBoton("BotonSalir", "Salir", panel.transform, -100f, SalirDelJuego, true);
 
@@ -205,8 +205,10 @@ public sealed class MenuPrincipal : MonoBehaviour
         if (mostrar)
         {
             menuRoot.transform.SetAsLastSibling();
+            /*
             if (botonIniciarSismo != null && controladorNivel != null)
                 botonIniciarSismo.interactable = !controladorNivel.SismoIniciado;
+            */
         }
     }
 

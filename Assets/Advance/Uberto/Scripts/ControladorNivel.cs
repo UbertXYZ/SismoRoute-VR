@@ -11,6 +11,7 @@ public sealed class ControladorNivel : MonoBehaviour
     [SerializeField, Min(0.01f)] private float duracionDesvanecimiento = 1f;
 
     [Header("Sismo")]
+    [SerializeField] private ControladorInicio controladorInicio;
     [SerializeField] private Transform xrOrigin;
     [SerializeField] private Transform destinoSismo;
     [SerializeField] private Text cronometro;
@@ -100,6 +101,10 @@ public sealed class ControladorNivel : MonoBehaviour
 
     private void Update()
     {
+        if((int)controladorInicio.EstadoActual == 3)
+        {
+            IniciarSismo();
+        }
         if (sismoActivo)
         {
             tiempoSismo += Time.deltaTime;
