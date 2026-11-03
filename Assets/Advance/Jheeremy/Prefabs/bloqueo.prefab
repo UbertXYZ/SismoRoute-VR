@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 8285218257479241505}
   - component: {fileID: 2265420382824901547}
+  - component: {fileID: 6091719608932163346}
   m_Layer: 0
   m_Name: ColliderBloqueo
   m_TagString: Untagged
@@ -53,6 +54,22 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 4, y: 5.3, z: 4}
   m_Center: {x: 0, y: 1.5, z: 0}
+--- !u!208 &6091719608932163346
+NavMeshObstacle:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2666482306004082928}
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Shape: 1
+  m_Extents: {x: 2, y: 2.65, z: 2}
+  m_MoveThreshold: 0.1
+  m_Carve: 1
+  m_CarveOnlyStationary: 1
+  m_Center: {x: 0, y: 1.5, z: 0}
+  m_TimeToStationary: 0.5
 --- !u!1 &3403025593339798691
 GameObject:
   m_ObjectHideFlags: 0
@@ -4973,6 +4990,7 @@ MonoBehaviour:
   activarAlIniciar: 0
   retardo: 0
   colliderBloqueo: {fileID: 2265420382824901547}
+  obstaculoNavMesh: {fileID: 6091719608932163346}
   rocas: {fileID: 3403025593339798691}
   tiempoAsentamiento: 3
   polvoAviso: {fileID: 1022798684679910029}

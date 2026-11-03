@@ -14,15 +14,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2185105659657913038, guid: a34ad4da9ee763a438872b762be4c200, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0
+      value: 17.678432
       objectReference: {fileID: 0}
     - target: {fileID: 2185105659657913038, guid: a34ad4da9ee763a438872b762be4c200, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0
+      value: 0.5
       objectReference: {fileID: 0}
     - target: {fileID: 2185105659657913038, guid: a34ad4da9ee763a438872b762be4c200, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0
+      value: 23.238522
       objectReference: {fileID: 0}
     - target: {fileID: 2185105659657913038, guid: a34ad4da9ee763a438872b762be4c200, type: 3}
       propertyPath: m_LocalRotation.w
@@ -62,6 +62,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1520209694523349108, guid: a34ad4da9ee763a438872b762be4c200, type: 3}
       insertIndex: -1
       addedObject: {fileID: 3970179631397898228}
+    - targetCorrespondingSourceObject: {fileID: 1520209694523349108, guid: a34ad4da9ee763a438872b762be4c200, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 7537432420172323802}
   m_SourcePrefab: {fileID: 100100000, guid: a34ad4da9ee763a438872b762be4c200, type: 3}
 --- !u!1 &4800783642284225005 stripped
 GameObject:
@@ -112,6 +115,103 @@ MonoBehaviour:
   velocidadHuida: 3.5
   retrasoReaccion: {x: 0, y: 1.5}
   desapareceAlSalir: 1
+  distanciaEvitarSalida: 6
+  probabilidadOtraSalida: 0.2
+  probabilidadSeguir: 0.3
+  radioBuscarLider: 10
+  distanciaAlLider: 1.5
+  distanciaRescate: 2.5
+  radioLlegadaSalida: 2.5
+  tiempoCansado: 10
   paramVelocidad: Velocidad
   paramPanico: Panico
+  estadoLocomocion: Locomocion
   estadoParalizado: Crying
+  estadoCansado: Crying
+  estadoFeliz: Victory
+--- !u!114 &7537432420172323802
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4800783642284225005}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8a35f6cfbfba9b548aaa00d52cfe8a50, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_InteractionManager: {fileID: 0}
+  m_Colliders: []
+  m_InteractionLayers:
+    m_Bits: 1
+  m_DistanceCalculationMode: 1
+  m_SelectMode: 0
+  m_FocusMode: 1
+  m_CustomReticle: {fileID: 0}
+  m_AllowGazeInteraction: 0
+  m_AllowGazeSelect: 0
+  m_OverrideGazeTimeToSelect: 0
+  m_GazeTimeToSelect: 0.5
+  m_OverrideTimeToAutoDeselectGaze: 0
+  m_TimeToAutoDeselectGaze: 3
+  m_AllowGazeAssistance: 0
+  m_FirstHoverEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_LastHoverExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_HoverEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_HoverExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_FirstSelectEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_LastSelectExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_SelectEntered:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 3970179631397898228}
+        m_TargetAssemblyTypeName: NPCComportamiento, Assembly-CSharp
+        m_MethodName: AlSerTocado
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+  m_SelectExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_FirstFocusEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_LastFocusExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_FocusEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_FocusExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Activated:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Deactivated:
+    m_PersistentCalls:
+      m_Calls: []
+  m_StartingHoverFilters: []
+  m_StartingSelectFilters: []
+  m_StartingInteractionStrengthFilters: []
+  m_AutoFindParentInteractableInHierarchy: 0
+  m_ParentInteractableObject: {fileID: 0}
