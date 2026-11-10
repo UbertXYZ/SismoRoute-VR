@@ -4,9 +4,9 @@ using TMPro;
 
 // Controla el inicio de la simulación:
 // 1) Esperando: el jugador recorre el edificio libremente, nada pasa.
-// 2) Noticia: encendió el televisor y se está viendo la noticia.
+// 2) Noticia: la TV está pasando la noticia.
 // 3) CuentaRegresiva: terminó la noticia; tiene 'tiempoLimite' segundos para activar una alarma.
-// 4) Iniciado: alarma activada (por el jugador o sola) -> los NPC reaccionan.
+// 4) Iniciado: alarma activada (por el jugador o sola) -> sirena, sonidos del sismo y los NPC reaccionan.
 public class ControladorInicio : MonoBehaviour
 {
     public static ControladorInicio Instancia { get; private set; }
@@ -20,10 +20,12 @@ public class ControladorInicio : MonoBehaviour
     public bool permitirAlarmaDuranteNoticia = true;
 
     [Header("Opcionales")]
-    [Tooltip("Texto 3D (TextMeshPro) para mostrar la cuenta regresiva, por ejemplo debajo del televisor.")]
+    [Tooltip("Texto 3D (TextMeshPro) para mostrar la cuenta regresiva.")]
     public TMP_Text textoCuenta;
     [Tooltip("Sonido de alarma (marcar Loop en el AudioSource).")]
     public AudioSource sonidoAlarma;
+    [Tooltip("Sonidos del sismo fuerte. Todos suenan a la vez al activarse la alarma.")]
+    public AudioSource[] sonidosSismo;
 
     [Header("Resultados (solo lectura)")]
     public bool alarmaActivadaPorJugador;
@@ -38,13 +40,13 @@ public class ControladorInicio : MonoBehaviour
         if (textoCuenta != null) textoCuenta.text = "";
     }
 
-    // Lo llama el televisor al encenderse
+    // Lo llama la TV al empezar la noticia
     public void TelevisorEncendido()
     {
         if (EstadoActual == Estado.EsperandoTV) EstadoActual = Estado.Noticia;
     }
 
-    // Lo llama el televisor cuando el video termina
+    // Lo llama la TV cuando la noticia termina
     public void NoticiaTerminada()
     {
         if (EstadoActual != Estado.Noticia) return;
@@ -66,13 +68,13 @@ public class ControladorInicio : MonoBehaviour
         if (EstadoActual == Estado.CuentaRegresiva) Iniciar(false);
     }
 
-    // Llamar desde cada botón/palanca de alarma (XR Simple Interactable → Select Entered)
+    // Lo llama cada botón de alarma
     public void ActivarAlarma()
     {
         bool puede = EstadoActual == Estado.CuentaRegresiva
                   || (EstadoActual == Estado.Noticia && permitirAlarmaDuranteNoticia);
         if (puede) Iniciar(true);
-        else if (EstadoActual == Estado.EsperandoTV) Debug.Log("Todavía no pasa nada: primero hay que encender el televisor.");
+        else if (EstadoActual == Estado.EsperandoTV) Debug.Log("Todavía no pasa nada: primero debe empezar la noticia.");
     }
 
     void Iniciar(bool porJugador)
@@ -84,6 +86,11 @@ public class ControladorInicio : MonoBehaviour
         if (textoCuenta != null)
             textoCuenta.text = porJugador ? "¡Alarma activada!\nEvacúe el edificio" : "La alarma se activó sola\nEvacúe el edificio";
         if (sonidoAlarma != null) sonidoAlarma.Play();
+
+        // Sonidos del sismo fuerte (terremoto, ciudad en pánico...)
+        if (sonidosSismo != null)
+            foreach (var s in sonidosSismo)
+                if (s != null) s.Play();
 
         Debug.Log(porJugador
             ? $"Alarma activada por el jugador ({tiempoReaccion:0.0} s después de la noticia)"

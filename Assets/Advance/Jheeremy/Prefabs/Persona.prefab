@@ -123,6 +123,15 @@ MonoBehaviour:
   distanciaRescate: 2.5
   radioLlegadaSalida: 2.5
   tiempoCansado: 10
+  gritos:
+  - {fileID: 8300000, guid: d17d2a073ca05b84b859442ad68ad40d, type: 3}
+  llantos:
+  - {fileID: 8300000, guid: dae23afa7ee016c4785727700f924454, type: 3}
+  charlas:
+  - {fileID: 8300000, guid: dae23afa7ee016c4785727700f924454, type: 3}
+  pausaEntreGritos: {x: 3, y: 8}
+  volumenVoz: 1
+  distanciaVoz: 15
   paramVelocidad: Velocidad
   paramPanico: Panico
   estadoLocomocion: Locomocion

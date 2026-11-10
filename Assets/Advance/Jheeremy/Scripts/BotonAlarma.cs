@@ -1,8 +1,10 @@
 ﻿using System.Collections;
 using UnityEngine;
 
-// Botón de alarma de pared: al tocarlo se hunde, cambia de color y activa la alarma.
-// Si todavía no se encendió el televisor, se hunde y vuelve a salir (no pasa nada).
+// Botón de alarma de pared.
+// - Cuando ya se puede activar (terminó la noticia): parpadea en rojo y pita.
+// - Al tocarlo: se hunde, cambia de color y activa la alarma.
+// - Si todavía no se puede: se hunde y vuelve a salir (no pasa nada).
 public class BotonAlarma : MonoBehaviour
 {
     [Tooltip("Cuánto se hunde el botón (metros).")]
@@ -13,15 +15,48 @@ public class BotonAlarma : MonoBehaviour
     [Tooltip("Opcional: sonido de 'clic' al presionar.")]
     public AudioSource sonidoClic;
 
+    [Header("Llamar la atención (cuando ya se puede activar)")]
+    public Color colorParpadeo = new Color(1f, 0.45f, 0.45f);
+    public float velocidadParpadeo = 2f;
+    [Tooltip("Opcional: una Point Light roja que parpadea junto al botón.")]
+    public Light luz;
+    [Tooltip("Opcional: pitido suave en bucle mientras parpadea.")]
+    public AudioSource pitido;
+
     Vector3 posicionInicial;
     Renderer rend;
+    Color colorInicial;
     bool presionado;
     bool animando;
+    bool parpadeando;
 
     void Awake()
     {
         posicionInicial = transform.position;
         rend = GetComponent<Renderer>();
+        if (rend != null) colorInicial = rend.material.color;
+        if (luz != null) luz.enabled = false;
+    }
+
+    void Update()
+    {
+        var ctrl = ControladorInicio.Instancia;
+        bool llamar = !presionado && ctrl != null && ctrl.EstadoActual == ControladorInicio.Estado.CuentaRegresiva;
+
+        if (llamar)
+        {
+            bool prendido = Mathf.Repeat(Time.time * velocidadParpadeo, 1f) < 0.5f;
+            if (rend != null) rend.material.color = prendido ? colorParpadeo : colorInicial;
+            if (luz != null) luz.enabled = prendido;
+            if (pitido != null && !pitido.isPlaying) pitido.Play();
+        }
+        else if (parpadeando)
+        {
+            if (rend != null && !presionado) rend.material.color = colorInicial;
+            if (luz != null) luz.enabled = false;
+            if (pitido != null) pitido.Stop();
+        }
+        parpadeando = llamar;
     }
 
     // Llamar desde XR Simple Interactable → Select Entered
