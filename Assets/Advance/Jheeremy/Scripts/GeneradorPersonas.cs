@@ -10,6 +10,10 @@ public class GeneradorPersonas : MonoBehaviour
 {
     [Header("Prefab")]
     public NPCComportamiento prefabPersona;
+    [Tooltip("Prefab de mujer. Si está vacío, todas las personas usan el prefab de arriba.")]
+    public NPCComportamiento prefabMujer;
+    [Tooltip("Probabilidad de que cada persona sea mujer (0.5 = mitad y mitad en promedio, pero varía en cada partida).")]
+    [Range(0f, 1f)] public float probabilidadMujer = 0.5f;
 
     [Header("Pisos (altura del suelo de cada piso, de ARRIBA hacia ABAJO)")]
     public float[] alturasPisos = { 18.12f, 13.62f, 9.12f, 4.62f, 0.12f };
@@ -113,7 +117,8 @@ public class GeneradorPersonas : MonoBehaviour
 
         for (int i = 0; i < posiciones.Count; i++)
         {
-            NPCComportamiento npc = Instantiate(prefabPersona, posiciones[i],
+            NPCComportamiento elegido = (prefabMujer != null && Random.value < probabilidadMujer) ? prefabMujer : prefabPersona;
+            NPCComportamiento npc = Instantiate(elegido, posiciones[i],
                                                 Quaternion.Euler(0f, Random.Range(0f, 360f), 0f), transform);
             npc.name = $"Persona_P{numPiso}_{i + 1}";
             bool desorientado = orden.IndexOf(i) < desorientados;

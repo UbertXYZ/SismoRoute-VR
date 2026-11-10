@@ -15,6 +15,8 @@ public class PuertaAutomatica : MonoBehaviour
     public bool bisagraIzquierda = true;
     [Tooltip("Segundos que espera sin nadie cerca antes de cerrarse.")]
     public float tiempoCierre = 1.5f;
+    [Tooltip("Abre hacia el lado contrario de quien llega (puerta de vaivén, en los dos sentidos).")]
+    public bool abrirAmbosLados = true;
 
     [Header("Detección")]
     [Tooltip("Zona alrededor de la puerta donde se detecta a las personas.")]
@@ -25,6 +27,8 @@ public class PuertaAutomatica : MonoBehaviour
     Vector3 bisagra;
     float anguloActual;
     float ultimaDeteccion = -99f;
+    float ladoDetectado = 1f;   // +1: abrir hacia +Z local, -1: hacia -Z local
+    float ladoActual = -1f;
     bool listo = false;
     bool avisado = false;
     readonly Collider[] encontrados = new Collider[16];
@@ -84,6 +88,7 @@ public class PuertaAutomatica : MonoBehaviour
                 local.y > -0.5f && local.y < 2.5f)
             {
                 ultimaDeteccion = Time.time;
+                ladoDetectado = local.z < 0f ? 1f : -1f;   // abrir hacia el lado contrario del jugador
                 return;
             }
         }
@@ -100,6 +105,8 @@ public class PuertaAutomatica : MonoBehaviour
                 c.GetComponentInParent<CharacterController>() != null)
             {
                 ultimaDeteccion = Time.time;
+                float z = transform.InverseTransformPoint(c.transform.position).z;
+                ladoDetectado = z < 0f ? 1f : -1f;          // abrir hacia el lado contrario del NPC
                 return;
             }
         }
@@ -114,7 +121,9 @@ public class PuertaAutomatica : MonoBehaviour
         anguloActual = Mathf.Lerp(anguloActual, objetivo, Time.deltaTime * velocidad);
 
         // Girar el modelo alrededor de la bisagra
-        float signo = bisagraIzquierda ? 1f : -1f;
+        // Elegir hacia dónde abrir solo cuando está cerrada (para que no cambie de lado a mitad)
+        if (anguloActual < 1f) ladoActual = abrirAmbosLados ? ladoDetectado : -1f;
+        float signo = (bisagraIzquierda ? -1f : 1f) * ladoActual;
         Quaternion giro = Quaternion.Euler(0f, anguloActual * signo, 0f);
         modelo.localRotation = giro * rotCerrada;
         modelo.localPosition = bisagra + giro * (posCerrada - bisagra);
