@@ -55,7 +55,7 @@ MonoBehaviour:
   tamanoHabitacionX: 8
   tamanoHabitacionZ: 10
   altoHabitacion: 4.5
-  grosorPared: 0.15
+  grosorPared: 0.2
   grosorSuelo: 0.125
   grosorTecho: 0.125
   generarTechoPisoBase: 0

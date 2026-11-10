@@ -4,6 +4,16 @@ using UnityEngine;
 [ExecuteAlways]
 public class HabitacionConfig : MonoBehaviour
 {
+    [Header("Clasificación de Habitación")]
+    [Tooltip("1=Salón normal, 2=Laboratorio, 3=Sala libre, 4=Dirección, 5=Pequeño almacén")]
+    [Range(0, 5)]
+    public int tipo = 0;
+
+    [Header("Mobiliario")]
+    public GameObject pupitreProfesorPrefab;
+    public GameObject pupitreEstudiantesPrefab;
+    public PupitresConfig pupitresConfig;
+
     [Header("Dimensiones de la Habitación")]
     [Tooltip("Ancho en el eje X")]
     public float ancho = 8f;
@@ -95,6 +105,9 @@ public class HabitacionConfig : MonoBehaviour
     public Transform contenedorLuces;
     public bool tieneLuces = true;
 
+    [Tooltip("Si es true, las paredes son gestionadas externamente (por BloqueHabitacion)")]
+    public bool paredesGestionadasExternamente = false;
+
     private void OnValidate()
     {
         ActualizarTodo();
@@ -114,13 +127,25 @@ public class HabitacionConfig : MonoBehaviour
         ActualizarLosaInferior();
         ActualizarLosaSuperior();
         altoPared = Mathf.Max(0f, alto - grosorSuelo - grosorTecho);
-        ActualizarParedes();
+
+        if (!paredesGestionadasExternamente)
+        {
+            ActualizarParedes();
+        }
+        else
+        {
+            // Solo si las paredes ya fueron asignadas desde fuera, actualizar sus medidas si se requiere
+            ActualizarParedesAsignadas();
+        }
+
         ActualizarPuertasLegacy();
         ActualizarLuces();
+        ActualizarPupitres();
     }
 
-    public void ConfigurarDimensiones(float nuevoAncho, float nuevoLargo, float nuevoAlto, float nuevoGrosorPared, float nuevoGrosorSuelo, float nuevoGrosorTecho)
+    public void ConfigurarDimensiones(float nuevoAncho, float nuevoLargo, float nuevoAlto, float nuevoGrosorPared, float nuevoGrosorSuelo, float nuevoGrosorTecho, int nuevoTipo = 1)
     {
+        tipo        = nuevoTipo;
         ancho       = nuevoAncho;
         largo       = nuevoLargo;
         alto        = nuevoAlto;
@@ -160,13 +185,11 @@ public class HabitacionConfig : MonoBehaviour
     {
         if (grosorSuelo <= 0f)
         {
-            // No se crea / se desactiva si existe
             if (losaInferior != null)
                 losaInferior.gameObject.SetActive(false);
             return;
         }
 
-        // Asegurar que exista
         if (losaInferior == null)
         {
             Transform encontrado = transform.Find("LosaInferior");
@@ -175,7 +198,6 @@ public class HabitacionConfig : MonoBehaviour
             {
                 losaInferior = encontrado;
             }
-            // Si sigue sin existir, no crear aquí (el prefab ya lo trae)
         }
 
         if (losaInferior == null) return;
@@ -213,7 +235,7 @@ public class HabitacionConfig : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────
-    // PAREDES
+    // PAREDES (Cuando son hijas propias)
     // ──────────────────────────────────────────────────────────
     private void ActualizarParedes()
     {
@@ -242,6 +264,13 @@ public class HabitacionConfig : MonoBehaviour
 
         // Derecha (+X) - span en Z = largo - grosorPared * 2
         ConfigurarParedTransform(paredDerecha,   new Vector3(posMitadX,  centroY, 0f), Quaternion.Euler(0f, 90f, 0f),   largoParedLat, altoPared, grosorPared, puertasDerecha);
+    }
+
+    private void ActualizarParedesAsignadas()
+    {
+        // Si las paredes son compartidas y vienen de BloqueHabitacion,
+        // no reubicamos su localPosition relativa a este transform para no desfasarlas,
+        // pero aseguramos que se configuren sus puertas/dimensiones si fuera necesario.
     }
 
     private void ConfigurarParedTransform(Transform tPared, Vector3 localPos, Quaternion localRot, float longitud, float altura, float espesor, int numPuertas)
@@ -358,6 +387,31 @@ public class HabitacionConfig : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────
+    // MOBILIARIO (PUPITRES)
+    // ──────────────────────────────────────────────────────────
+    public void ActualizarPupitres()
+    {
+        if (pupitresConfig == null)
+        {
+            pupitresConfig = GetComponent<PupitresConfig>();
+            if (pupitresConfig == null)
+            {
+                pupitresConfig = gameObject.AddComponent<PupitresConfig>();
+            }
+        }
+
+        bool tieneParedIzq = (paredIzquierda != null && paredIzquierda.gameObject.activeSelf);
+        bool tieneParedDer = (paredDerecha != null && paredDerecha.gameObject.activeSelf);
+
+        pupitresConfig.Configurar(
+            ancho, largo, alto, grosorSuelo, tipo,
+            puertasDerecha > 0, puertasIzquierda > 0, puertasFrontal > 0, puertasTrasera > 0,
+            tieneParedIzq, tieneParedDer,
+            pupitreProfesorPrefab, pupitreEstudiantesPrefab
+        );
+    }
+
+    // ──────────────────────────────────────────────────────────
     // CARGA AUTOMÁTICA DE PREFABS
     // ──────────────────────────────────────────────────────────
     private void OnEnable()
@@ -374,6 +428,10 @@ public class HabitacionConfig : MonoBehaviour
             puertaPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/Puerta.prefab");
         if (paredPrefab == null)
             paredPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/BasePrefabs/ParedBase.prefab");
+        if (pupitreProfesorPrefab == null)
+            pupitreProfesorPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/PupitreProfesor.prefab");
+        if (pupitreEstudiantesPrefab == null)
+            pupitreEstudiantesPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/PupitreEstudiantes.prefab");
 #endif
     }
 }
