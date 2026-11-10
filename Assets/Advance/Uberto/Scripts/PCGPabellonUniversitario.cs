@@ -317,10 +317,10 @@ public class PCGPabellonUniversitario : MonoBehaviour
         float largoPasillosZ = Mathf.Max(1f, finZ - inicioZ);
         float centroZMedio   = (inicioZ + finZ) / 2f;
 
-        bool hayPasilloZ = anchoPabellon < 28f;
+        bool hayPasilloZ = true;//anchoPabellon < 28f;
         if (hayPasilloZ)
         {
-            float posXPasilloZInf = minX + anchoPasillos / 2f;
+            float posXPasilloZInf = minX + (anchoPasillos / 2f);
             CrearPasilloZ(padrePiso, new Vector3(posXPasilloZInf, 0f, centroZMedio), largoPasillosZ, "Pasillo_Z_Inferior");
         }
 
@@ -333,7 +333,7 @@ public class PCGPabellonUniversitario : MonoBehaviour
         if (hayPasilloZ)
         {
             anchoAreaCentral = anchoPabellon - anchoPasillos;
-            centroXCentral   = minX + anchoPasillos + anchoAreaCentral / 2f;
+            centroXCentral   = minX + (anchoPasillos + anchoAreaCentral / 2f);
         }
         else
         {

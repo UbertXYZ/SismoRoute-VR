@@ -61,7 +61,7 @@ GameObject:
   - component: {fileID: 1347225988734088090}
   m_Layer: 0
   m_Name: ParedDerecha
-  m_TagString: Untagged
+  m_TagString: Pared
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 2147483647
@@ -393,7 +393,7 @@ GameObject:
   - component: {fileID: 1519051634731518651}
   m_Layer: 0
   m_Name: ParedOrigen
-  m_TagString: Untagged
+  m_TagString: Pared
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 2147483647
@@ -609,7 +609,7 @@ GameObject:
   - component: {fileID: 1064041430496208180}
   m_Layer: 0
   m_Name: ParedIzquierda
-  m_TagString: Untagged
+  m_TagString: Pared
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 2147483647
@@ -717,7 +717,7 @@ GameObject:
   - component: {fileID: 1771084334462808039}
   m_Layer: 0
   m_Name: ParedCentro
-  m_TagString: Untagged
+  m_TagString: Pared
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 2147483647
