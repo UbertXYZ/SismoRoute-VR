@@ -74,6 +74,17 @@ public class PCGPabellonUniversitario : MonoBehaviour
     [Tooltip("Grosor de la Losa Superior (Techo) de las habitaciones (0 = no se crea)")]
     public float grosorTechoHabitacion = 0f;
 
+    [Header("Límites de Espacio Interior Vacío para Habitaciones")]
+    [Tooltip("Largo mínimo Z del espacio interior en habitaciones del bloque central")]
+    public float limiteCentralHabitacionZ = 10f;
+    [Tooltip("Ancho mínimo X del espacio interior en habitaciones del bloque central")]
+    public float limiteCentralHabitacionX = 8f;
+
+    [Tooltip("Largo Z del espacio interior en habitaciones de bloques de escalera (por defecto 5 m)")]
+    public float limiteEscaleraHabitacionZ = 5f;
+    [Tooltip("Ancho mínimo X del espacio interior en habitaciones de bloques de escalera (por defecto 7 m)")]
+    public float limiteEscaleraHabitacionX = 7f;
+
     // ──────────────────────────────────────────────────────────
     // PREFABS
     // ──────────────────────────────────────────────────────────
@@ -86,6 +97,8 @@ public class PCGPabellonUniversitario : MonoBehaviour
     public GameObject habitacionPrefab;
     public GameObject paredBasePrefab;
     public GameObject puertaPrefab;
+    public GameObject pupitreProfesorPrefab;
+    public GameObject pupitreEstudiantesPrefab;
 
     [Header("Dimensiones del Prefab Escalera (Unity: 7m x 5m)")]
     public float anchoEscalera = 7f;
@@ -204,6 +217,7 @@ public class PCGPabellonUniversitario : MonoBehaviour
 
         bool esPrimerPiso   = indicePiso == 0;
         bool enPisosConVidrio = indicePiso >= 1;
+        bool esUltimoPiso = (indicePiso == numeroPisos - 1);
 
         // ─────────────────────────────────────────────────────
         // A. ESCALERAS
@@ -215,12 +229,12 @@ public class PCGPabellonUniversitario : MonoBehaviour
         CrearEscalera(padrePiso,
             new Vector3(minX + anchoEscalera / 2f, 0f, minZ + largoEscalera / 2f),
             Quaternion.identity,
-            "Escalera_Inferior_Izquierda");
+            "Escalera_Inferior_Izquierda", esPrimerPiso);
 
         CrearEscalera(padrePiso,
             new Vector3(minX + anchoEscalera / 2f, 0f, maxZ - largoEscalera / 2f),
             Quaternion.Euler(0f, 180f, 0f),
-            "Escalera_Superior_Izquierda");
+            "Escalera_Superior_Izquierda", esPrimerPiso);
 
         if (cuatroEscaleras)
         {
@@ -228,12 +242,12 @@ public class PCGPabellonUniversitario : MonoBehaviour
             CrearEscalera(padrePiso,
                 new Vector3(anchoEscalera / 2f, 0f, minZ + largoEscalera / 2f),
                 Quaternion.identity,
-                "Escalera_Inferior_Derecha");
+                "Escalera_Inferior_Derecha", esPrimerPiso);
 
             CrearEscalera(padrePiso,
                 new Vector3(anchoEscalera / 2f, 0f, maxZ - largoEscalera / 2f),
                 Quaternion.Euler(0f, 180f, 0f),
-                "Escalera_Superior_Derecha");
+                "Escalera_Superior_Derecha", esPrimerPiso);
         }
 
         // ─────────────────────────────────────────────────────
@@ -250,12 +264,14 @@ public class PCGPabellonUniversitario : MonoBehaviour
                 CrearBloqueExtremo(padrePiso,
                     new Vector3(centroXBlqIzq, 0f, minZ + largoEscalera / 2f),
                     anchoBlqIzq, largoEscalera,
-                    "BloqueHab_ExtremoInferior_Izq", haciaZPositiva: true);
+                    "BloqueHab_ExtremoInferior_Izq", haciaZPositiva: true,
+                    esUltimoPiso: esUltimoPiso);
 
                 CrearBloqueExtremo(padrePiso,
                     new Vector3(centroXBlqIzq, 0f, maxZ - largoEscalera / 2f),
                     anchoBlqIzq, largoEscalera,
-                    "BloqueHab_ExtremoSuperior_Izq", haciaZPositiva: false);
+                    "BloqueHab_ExtremoSuperior_Izq", haciaZPositiva: false,
+                    esUltimoPiso: esUltimoPiso);
             }
 
             // Mitad DERECHA: [anchoEscalera, maxX]
@@ -267,16 +283,18 @@ public class PCGPabellonUniversitario : MonoBehaviour
                 BloqueHabitacion blqID = CrearBloqueExtremo(padrePiso,
                     new Vector3(centroXBlqDer, 0f, minZ + largoEscalera / 2f),
                     anchoBlqDer, largoEscalera,
-                    "BloqueHab_ExtremoInferior_Der", haciaZPositiva: true);
-                if (enPisosConVidrio && blqID != null)
-                    blqID.OcultarParedesPegadas(false, false, false, true);
+                    "BloqueHab_ExtremoInferior_Der", haciaZPositiva: true,
+                    esParedVidrioEste: enPisosConVidrio,
+                    tienePasilloDerecho: false,
+                    esUltimoPiso: esUltimoPiso);
 
                 BloqueHabitacion blqSD = CrearBloqueExtremo(padrePiso,
                     new Vector3(centroXBlqDer, 0f, maxZ - largoEscalera / 2f),
                     anchoBlqDer, largoEscalera,
-                    "BloqueHab_ExtremoSuperior_Der", haciaZPositiva: false);
-                if (enPisosConVidrio && blqSD != null)
-                    blqSD.OcultarParedesPegadas(false, false, false, true);
+                    "BloqueHab_ExtremoSuperior_Der", haciaZPositiva: false,
+                    esParedVidrioEste: enPisosConVidrio,
+                    tienePasilloDerecho: false,
+                    esUltimoPiso: esUltimoPiso);
             }
         }
         else
@@ -288,16 +306,18 @@ public class PCGPabellonUniversitario : MonoBehaviour
             BloqueHabitacion blqI = CrearBloqueExtremo(padrePiso,
                 new Vector3(centroXBloques, 0f, minZ + largoEscalera / 2f),
                 anchoDispBloques, largoEscalera,
-                "BloqueHab_ExtremoInferior", haciaZPositiva: true);
-            if (enPisosConVidrio && blqI != null)
-                blqI.OcultarParedesPegadas(false, false, false, true);
+                "BloqueHab_ExtremoInferior", haciaZPositiva: true,
+                esParedVidrioEste: enPisosConVidrio,
+                tienePasilloDerecho: false,
+                esUltimoPiso: esUltimoPiso);
 
             BloqueHabitacion blqS = CrearBloqueExtremo(padrePiso,
                 new Vector3(centroXBloques, 0f, maxZ - largoEscalera / 2f),
                 anchoDispBloques, largoEscalera,
-                "BloqueHab_ExtremoSuperior", haciaZPositiva: false);
-            if (enPisosConVidrio && blqS != null)
-                blqS.OcultarParedesPegadas(false, false, false, true);
+                "BloqueHab_ExtremoSuperior", haciaZPositiva: false,
+                esParedVidrioEste: enPisosConVidrio,
+                tienePasilloDerecho: false,
+                esUltimoPiso: esUltimoPiso);
         }
 
         // ─────────────────────────────────────────────────────
@@ -317,7 +337,7 @@ public class PCGPabellonUniversitario : MonoBehaviour
         float largoPasillosZ = Mathf.Max(1f, finZ - inicioZ);
         float centroZMedio   = (inicioZ + finZ) / 2f;
 
-        bool hayPasilloZ = true;//anchoPabellon < 28f;
+        bool hayPasilloZ = anchoPabellon < 28f;
         if (hayPasilloZ)
         {
             float posXPasilloZInf = minX + (anchoPasillos / 2f);
@@ -343,10 +363,10 @@ public class PCGPabellonUniversitario : MonoBehaviour
 
         BloqueHabitacion blqCentral = CrearBloqueCentral(padrePiso,
             new Vector3(centroXCentral, 0f, centroZMedio),
-            anchoAreaCentral, largoPasillosZ, hayPasilloZ);
-
-        if (enPisosConVidrio && blqCentral != null)
-            blqCentral.OcultarParedesPegadas(false, false, false, true);
+            anchoAreaCentral, largoPasillosZ, hayPasilloZ,
+            esParedVidrioEste: enPisosConVidrio,
+            tienePasilloDerecho: esPrimerPiso,
+            esUltimoPiso: esUltimoPiso);
 
         // ─────────────────────────────────────────────────────
         // F. VEREDA DE ENTRADA (solo en el PRIMER PISO, piso==0)
@@ -536,14 +556,14 @@ public class PCGPabellonUniversitario : MonoBehaviour
     // ──────────────────────────────────────────────────────────
     // HELPERS DE CREACIÓN — PASILLOS
     // ──────────────────────────────────────────────────────────
-    private void CrearEscalera(Transform padre, Vector3 localPos, Quaternion localRot, string nombre)
+    private void CrearEscalera(Transform padre, Vector3 localPos, Quaternion localRot, string nombre, bool esPrimerPiso)
     {
         GameObject go = ObtenerOInstanciar(escaleraPrefab, padre, nombre);
         go.transform.localPosition = localPos;
         go.transform.localRotation = localRot;
 
-        Escaleras comp = go.GetComponent<Escaleras>();
-        if (comp != null) comp.Configurar(anchoEscalera, largoEscalera, alturaPisos);
+        EscaleraConfig comp = go.GetComponent<EscaleraConfig>();
+        if (comp != null) comp.Configurar(esPrimerPiso);
     }
 
     private void CrearPasilloX(Transform padre, Vector3 localPos, float longitudX, string nombre)
@@ -599,7 +619,7 @@ public class PCGPabellonUniversitario : MonoBehaviour
     // ──────────────────────────────────────────────────────────
     // HELPERS DE CREACIÓN — BLOQUES
     // ──────────────────────────────────────────────────────────
-    private BloqueHabitacion CrearBloqueExtremo(Transform padre, Vector3 localPos, float anchoTotalX, float largoZ, string nombre, bool haciaZPositiva)
+    private BloqueHabitacion CrearBloqueExtremo(Transform padre, Vector3 localPos, float anchoTotalX, float largoZ, string nombre, bool haciaZPositiva, bool esParedVidrioEste = false, bool tienePasilloDerecho = false, bool esUltimoPiso = false)
     {
         GameObject go = ObtenerOInstanciar(bloqueHabitacionPrefab, padre, nombre);
         go.transform.localPosition = localPos;
@@ -608,41 +628,55 @@ public class PCGPabellonUniversitario : MonoBehaviour
         BloqueHabitacion bloque = go.GetComponent<BloqueHabitacion>();
         if (bloque != null)
         {
-            const float minHabX = 5f; // mínimo 5 m en X
+            float minHabX = Mathf.Max(1f, limiteEscaleraHabitacionX);
+            float minHabZ = Mathf.Max(1f, limiteEscaleraHabitacionZ);
 
-            // Calcular cuántas habitaciones caben, respetando coste de pasillos Z internos
-            int cantHabX = Mathf.Max(1, Mathf.FloorToInt(anchoTotalX / minHabX));
-            while (cantHabX > 1)
+            // Largo interior útil
+            float tamHabZ = Mathf.Max(1f, largoZ - 2f * grosorPared);
+
+            // Calcular cuántas habitaciones caben en anchoTotalX respetando minHabX y paredes compartidas
+            int cantHabX = 1;
+            for (int k = 2; k <= 10; k++)
             {
                 int cortesZ = 0;
-                for (int j = 2; j < cantHabX; j += 2) cortesZ++;
-                if (cantHabX * minHabX + cortesZ * anchoPasillos <= anchoTotalX) break;
-                cantHabX--;
+                for (int j = 2; j < k; j += 2) cortesZ++;
+                int paredesX = (k + 1) + cortesZ;
+                float espacioRequerido = k * minHabX + paredesX * grosorPared + cortesZ * anchoPasillos;
+                if (anchoTotalX >= espacioRequerido) cantHabX = k;
+                else break;
             }
 
-            // Distribuir espacio sobrante
             int cortesFinZ = 0;
             for (int j = 2; j < cantHabX; j += 2) cortesFinZ++;
-            float tamHabX = Mathf.Max(minHabX, (anchoTotalX - cortesFinZ * anchoPasillos) / cantHabX);
+            int numParedesXFin = (cantHabX + 1) + cortesFinZ;
+            float espacioDisponibleHabs = anchoTotalX - numParedesXFin * grosorPared - cortesFinZ * anchoPasillos;
+            // Si la habitación es inferior al límite y solo es una, se crea de igual forma:
+            float tamHabX = (cantHabX == 1) ? Mathf.Max(0.5f, espacioDisponibleHabs) : Mathf.Max(minHabX, espacioDisponibleHabs / cantHabX);
 
-            // Propagar configuración de losas
+            // Propagar configuración de losas y prefabs
             bloque.grosorLosaInferiorPasillo = grosorLosaInferiorPasillo;
             bloque.grosorLosaSuperiorPasillo = grosorLosaSuperiorPasillo;
             bloque.grosorSuelo = grosorSueloHabitacion;
             bloque.grosorTecho = grosorTechoHabitacion;
+            bloque.grosorPared = grosorPared;
             if (losaPrefab != null) bloque.techoPisoBasePrefab = losaPrefab;
+            if (pupitreProfesorPrefab != null) bloque.pupitreProfesorPrefab = pupitreProfesorPrefab;
+            if (pupitreEstudiantesPrefab != null) bloque.pupitreEstudiantesPrefab = pupitreEstudiantesPrefab;
 
             bloque.Configurar(
-                1, cantHabX, tamHabX, largoZ, alturaPisos,
+                1, cantHabX, tamHabX, tamHabZ, alturaPisos,
                 false, false, anchoPasillos,
                 BloqueHabitacion.TipoPuertasBloque.SoloUnaPuerta, false,
-                haciaZPositiva, !haciaZPositiva, false, false
+                haciaZPositiva, !haciaZPositiva, false, tienePasilloDerecho,
+                esParedVidrioEste,
+                esExtremoEscalera: true,
+                esPisoFinal: esUltimoPiso
             );
         }
         return bloque;
     }
 
-    private BloqueHabitacion CrearBloqueCentral(Transform padre, Vector3 localPos, float anchoTotalX, float largoTotalZ, bool hayPasilloZ)
+    private BloqueHabitacion CrearBloqueCentral(Transform padre, Vector3 localPos, float anchoTotalX, float largoTotalZ, bool hayPasilloZ, bool esParedVidrioEste = false, bool tienePasilloDerecho = false, bool esUltimoPiso = false)
     {
         GameObject go = ObtenerOInstanciar(bloqueHabitacionPrefab, padre, "BloqueHabitaciones_Central");
         go.transform.localPosition = localPos;
@@ -651,43 +685,60 @@ public class PCGPabellonUniversitario : MonoBehaviour
         BloqueHabitacion bloque = go.GetComponent<BloqueHabitacion>();
         if (bloque != null)
         {
-            // M: habitaciones en Z (min 10 m)
+            float minHabZ = Mathf.Max(1f, limiteCentralHabitacionZ);
+            float minHabX = Mathf.Max(1f, limiteCentralHabitacionX);
+
+            // M: habitaciones en Z
             int cantM = 1;
             for (int k = 2; k <= 8; k++)
             {
                 int cortes = 0;
                 for (int p = 6; p < k; p += 3) cortes++;
-                if (k * 10f + cortes * anchoPasillos <= largoTotalZ) cantM = k;
+                int numParedesZ = (k + 1) + cortes;
+                float espacioNecesario = k * minHabZ + numParedesZ * grosorPared + cortes * anchoPasillos;
+                if (largoTotalZ >= espacioNecesario) cantM = k;
                 else break;
             }
             int cortesM = 0;
             for (int p = 6; p < cantM; p += 3) cortesM++;
-            float tamZ = Mathf.Max(10f, (largoTotalZ - cortesM * anchoPasillos) / cantM);
+            int numParedesZFin = (cantM + 1) + cortesM;
+            float espacioDisponibleZ = largoTotalZ - numParedesZFin * grosorPared - cortesM * anchoPasillos;
+            float tamZ = (cantM == 1) ? Mathf.Max(0.5f, espacioDisponibleZ) : Mathf.Max(minHabZ, espacioDisponibleZ / cantM);
 
-            // N: habitaciones en X (min 8 m)
+            // N: habitaciones en X
             int cantN = 1;
             for (int k = 2; k <= 6; k++)
             {
                 int cortes = 0;
                 for (int p = 2; p < k; p += 2) cortes++;
-                if (k * 8f + cortes * anchoPasillos <= anchoTotalX) cantN = k;
+                int numParedesX = (k + 1) + cortes;
+                float espacioNecesario = k * minHabX + numParedesX * grosorPared + cortes * anchoPasillos;
+                if (anchoTotalX >= espacioNecesario) cantN = k;
                 else break;
             }
             int cortesN = 0;
             for (int p = 2; p < cantN; p += 2) cortesN++;
-            float tamX = Mathf.Max(8f, (anchoTotalX - cortesN * anchoPasillos) / cantN);
+            int numParedesXFin = (cantN + 1) + cortesN;
+            float espacioDisponibleX = anchoTotalX - numParedesXFin * grosorPared - cortesN * anchoPasillos;
+            float tamX = (cantN == 1) ? Mathf.Max(0.5f, espacioDisponibleX) : Mathf.Max(minHabX, espacioDisponibleX / cantN);
 
             bloque.grosorLosaInferiorPasillo = grosorLosaInferiorPasillo;
             bloque.grosorLosaSuperiorPasillo = grosorLosaSuperiorPasillo;
             bloque.grosorSuelo = grosorSueloHabitacion;
             bloque.grosorTecho = grosorTechoHabitacion;
+            bloque.grosorPared = grosorPared;
             if (losaPrefab != null) bloque.techoPisoBasePrefab = losaPrefab;
+            if (pupitreProfesorPrefab != null) bloque.pupitreProfesorPrefab = pupitreProfesorPrefab;
+            if (pupitreEstudiantesPrefab != null) bloque.pupitreEstudiantesPrefab = pupitreEstudiantesPrefab;
 
             bloque.Configurar(
                 cantM, cantN, tamX, tamZ, alturaPisos,
                 true, true, anchoPasillos,
                 BloqueHabitacion.TipoPuertasBloque.SoloUnaPuerta, false,
-                true, true, hayPasilloZ, true
+                true, true, hayPasilloZ, tienePasilloDerecho,
+                esParedVidrioEste,
+                esExtremoEscalera: false,
+                esPisoFinal: esUltimoPiso
             );
         }
         return bloque;
@@ -808,6 +859,10 @@ public class PCGPabellonUniversitario : MonoBehaviour
             escaleraPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/Escaleras.prefab");
         if (materialVidrio == null)
             materialVidrio = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>("Assets/Advance/Uberto/Vidrio.mat");
+        if (pupitreProfesorPrefab == null)
+            pupitreProfesorPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/PupitreProfesor.prefab");
+        if (pupitreEstudiantesPrefab == null)
+            pupitreEstudiantesPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/PupitreEstudiantes.prefab");
 #endif
     }
 }
