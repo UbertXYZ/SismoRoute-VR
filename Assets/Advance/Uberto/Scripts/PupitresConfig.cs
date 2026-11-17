@@ -6,7 +6,8 @@ using UnityEngine;
 ///
 /// Dimensiones de los prefabs (espacio local, centro en 0,0,0):
 ///   PupitreProfesor  : 2.0 m en X (-1 a +1), 1.4 m en Z (-0.7 a +0.7). Frente = +Z local.
-///   PupitreEstudiante: 1.2 m en X (-0.6 a +0.6), 1.8 m en Z (-0.9 a +0.9). Frente = +Z local.
+///   PupitreEstudiantes (grupo del prefab): 1.2 m en X y 1.4 m en Z local.
+///   Las columnas se distribuyen siguiendo el eje Z local tras aplicar su giro.
 ///
 /// Regla de generación:
 ///   PRIMERO se calcula todo (posiciones, rotaciones, conteos).
@@ -30,6 +31,10 @@ public class PupitresConfig : MonoBehaviour
     [Range(0, 5)]
     public int tipo = 0;
 
+    [UnityEngine.Serialization.FormerlySerializedAs("espacioPupitres")]
+    [Min(0f)] public float espacioColumnasPupitres = 0.8f;
+    [Min(0f)] public float espacioCaminoHabitacion = 1f;
+
     [Tooltip("Grosor del suelo")]
     public float grosorSuelo = 0f;
 
@@ -43,7 +48,14 @@ public class PupitresConfig : MonoBehaviour
     [Tooltip("Indica si la puerta principal está en la pared trasera (-Z)")]
     public bool puertaEnTrasera   = false;
 
+    [Range(0, 2)] public int cantidadPuertasFrontal;
+    [Range(0, 2)] public int cantidadPuertasTrasera;
+    [Range(0, 2)] public int cantidadPuertasIzquierda;
+    [Range(0, 2)] public int cantidadPuertasDerecha;
+
     [Header("Existencia de Paredes (para Tipo 4)")]
+    public bool tieneParedFrontal = true;
+    public bool tieneParedTrasera = true;
     public bool tieneParedIzquierda = true;
     public bool tieneParedDerecha   = true;
 
@@ -60,13 +72,9 @@ public class PupitresConfig : MonoBehaviour
     private const float PROF_HALF_X = 1.0f;   // ±1 m en X local
     private const float PROF_HALF_Z = 0.7f;   // ±0.7 m en Z local
 
-    // PupitreEstudiante: 1.2 × 1.8 m (X × Z). Frente = +Z local.
+    // El prefab agrupa mesas y sillas: huella local de 1.2 × 1.4 m.
     private const float EST_HALF_X  = 0.6f;   // ±0.6 m en X local
-    private const float EST_HALF_Z  = 0.9f;   // ±0.9 m en Z local
-
-    private const float MARGEN_PARED = 1.0f;  // distancia mínima a las paredes
-    private const float MARGEN_PROF  = 1.0f;  // distancia mínima entre estudiantes y profesor
-    private const float GAP_FILA     = 0.4f;  // hueco entre pupitres dentro de la misma fila
+    private const float EST_HALF_Z  = 0.7f;   // ±0.7 m en Z local
 
     // ── Guard contra re-entrada (OnValidate cascada) ──────────────
     private bool _generando = false;
@@ -77,7 +85,12 @@ public class PupitresConfig : MonoBehaviour
     public void Configurar(float nuevoAncho, float nuevoLargo, float nuevaAltura, float nuevoGrosorSuelo, int nuevoTipo,
                            bool tienePuertaDer, bool tienePuertaIzq, bool tienePuertaFront, bool tienePuertaTras,
                            bool existeParedIzq = true, bool existeParedDer = true,
-                           GameObject prefabProf = null, GameObject prefabEst = null)
+                           GameObject prefabProf = null, GameObject prefabEst = null,
+                           float espacioColumnasPupitres = 0.8f,
+                           float espacioCaminoHabitacion = 1f,
+                           int cantidadPuertasDerecha = -1, int cantidadPuertasIzquierda = -1,
+                           int cantidadPuertasFrontal = -1, int cantidadPuertasTrasera = -1,
+                           bool existeParedFrontal = true, bool existeParedTrasera = true)
     {
         anchoLibre  = nuevoAncho;
         largoLibre  = nuevoLargo;
@@ -90,8 +103,22 @@ public class PupitresConfig : MonoBehaviour
         puertaEnFrontal   = tienePuertaFront;
         puertaEnTrasera   = tienePuertaTras;
 
+        this.cantidadPuertasDerecha = cantidadPuertasDerecha >= 0
+            ? Mathf.Clamp(cantidadPuertasDerecha, 0, 2) : (tienePuertaDer ? 1 : 0);
+        this.cantidadPuertasIzquierda = cantidadPuertasIzquierda >= 0
+            ? Mathf.Clamp(cantidadPuertasIzquierda, 0, 2) : (tienePuertaIzq ? 1 : 0);
+        this.cantidadPuertasFrontal = cantidadPuertasFrontal >= 0
+            ? Mathf.Clamp(cantidadPuertasFrontal, 0, 2) : (tienePuertaFront ? 1 : 0);
+        this.cantidadPuertasTrasera = cantidadPuertasTrasera >= 0
+            ? Mathf.Clamp(cantidadPuertasTrasera, 0, 2) : (tienePuertaTras ? 1 : 0);
+
+        this.espacioColumnasPupitres = Mathf.Max(0f, espacioColumnasPupitres);
+        this.espacioCaminoHabitacion = Mathf.Max(0f, espacioCaminoHabitacion);
+
         tieneParedIzquierda = existeParedIzq;
         tieneParedDerecha   = existeParedDer;
+        tieneParedFrontal   = existeParedFrontal;
+        tieneParedTrasera   = existeParedTrasera;
 
         if (prefabProf != null) pupitreProfesorPrefab    = prefabProf;
         if (prefabEst  != null) pupitreEstudiantesPrefab = prefabEst;
@@ -111,7 +138,7 @@ public class PupitresConfig : MonoBehaviour
         try
         {
             CargarPrefabsSiEsNecesario();
-            //LimpiarPupitres();
+            LimpiarPupitres();
 
             if (tipo == 5 || tipo == 0) return; // Almacén: sin mobiliario
 
@@ -131,392 +158,268 @@ public class PupitresConfig : MonoBehaviour
 
     // ─────────────────────────────────────────────────────────────
     // TIPO 1: SALÓN NORMAL
-    //   • 1 pupitre profesor en la esquina del frente (+Z) de la pared con doble puerta
-    //   • Columnas de estudiantes separadas 1 m entre sí (en la dirección de profundidad)
+    //   • Profesor en una esquina libre de puertas.
+    //   • Un espacio de 1 m separa al profesor de los estudiantes.
+    //   • Las columnas usan espacioColumnasPupitres para separarse.
     // ─────────────────────────────────────────────────────────────
     private void GenerarSalonNormal()
     {
-        CalcularLayoutAula(gapColumnas: MARGEN_PROF,
-            out Vector3 posProf, out float rotYProf,
-            out List<Vector3> posEst, out float rotYEst);
-
-        // ── Instanciar UNA SOLA vez ──────────────────────────────
-        InstanciarProfesor(posProf, rotYProf);
-        InstanciarEstudiantes(posEst, rotYEst);
+        GenerarAula(gapColumnas: espacioColumnasPupitres, gapPupitresEnColumna: 0f);
     }
 
     // ─────────────────────────────────────────────────────────────
     // TIPO 2: LABORATORIO
-    //   • Idéntico al Salón pero las columnas de estudiantes están
-    //     pegadas entre sí (gap = 0 en la dirección de profundidad).
+    //   • Usa espacioCaminoHabitacion frente al profesor y junto a las paredes.
+    //   • Los pupitres de estudiantes quedan pegados entre sí.
     // ─────────────────────────────────────────────────────────────
     private void GenerarLaboratorio()
     {
-        CalcularLayoutAula(gapColumnas: 0f,
-            out Vector3 posProf, out float rotYProf,
-            out List<Vector3> posEst, out float rotYEst);
-
-        InstanciarProfesor(posProf, rotYProf);
-        InstanciarEstudiantes(posEst, rotYEst);
+        GenerarAula(gapColumnas: 0f, gapPupitresEnColumna: 0f);
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // CÁLCULO UNIFICADO DEL LAYOUT AULA (Tipo 1 y 2)
-    //
-    // Convención de rotaciones en Unity (mano izquierda, Y arriba):
-    //   rotY =   0° → frente local +Z apunta a +Z mundo
-    //   rotY =  90° → frente local +Z apunta a +X mundo
-    //   rotY = 180° → frente local +Z apunta a -Z mundo
-    //   rotY = 270° → frente local +Z apunta a -X mundo
-    //
-    // Tras la rotación, los semiejes del prefab en el mundo:
-    //   rotY =  90° : local X (2m) → mundo -Z (±1m Z), local Z (1.4m) → mundo +X (±0.7m X)
-    //   rotY = 270° : local X (2m) → mundo +Z (±1m Z), local Z (1.4m) → mundo -X (±0.7m X)
-    //   rotY =   0° : local X (2m) → mundo +X (±1m X), local Z (1.4m) → mundo +Z (±0.7m Z)
-    //   rotY = 180° : local X (2m) → mundo -X (±1m X), local Z (1.4m) → mundo -Z (±0.7m Z)
-    //
-    // Posición del profesor:
-    //   • La pared con doble puerta define el lado del aula.
-    //   • El profesor está en la esquina de esa misma pared al +Z (frente del aula).
-    //   • Mira hacia el interior del aula (perpendicular a la pared).
-    // ─────────────────────────────────────────────────────────────
-    private void CalcularLayoutAula(float gapColumnas,
-        out Vector3 posProf,  out float rotYProf,
-        out List<Vector3> posEst, out float rotYEst)
+    private void GenerarAula(float gapColumnas, float gapPupitresEnColumna)
     {
-        posEst = new List<Vector3>();
+        if (ContarParedesConPuerta() != 1 || ContarParedesConDoblePuerta() != 1)
+            return;
 
-        // ── Determinar orientación según la pared con doble puerta ──
-        // Prioridad: Derecha > Izquierda > Frontal > Trasera
-        bool paredX = puertaEnDerecha || puertaEnIzquierda; // pared paralela a Z, door en X-side
-        bool paredZ = !paredX && (puertaEnFrontal || puertaEnTrasera);
+        // Salón Normal reserva el camino de la pared con doble puerta y el
+        // espacio frente al profesor. Laboratorio añade dos márgenes de pared.
+        float margenPared = tipo == 2 ? espacioCaminoHabitacion : 0f;
+        CalcularLayoutAula(
+            out Vector3 posProf, out float rotYProf,
+            out float rotYEst, out float minX, out float maxX,
+            out float minZ, out float maxZ, margenPared, espacioCaminoHabitacion);
 
-        if (paredX)
+        if (pupitreProfesorPrefab != null)
+            InstanciarProfesor(posProf, rotYProf);
+
+        if (pupitreEstudiantesPrefab == null)
+            return;
+
+        var estudiantes = new List<(Vector3 pos, float rotY)>();
+        AgregarGrillaEnRectangulo(
+            minX, maxX, minZ, maxZ, rotYEst,
+            gapColumnas, gapPupitresEnColumna, estudiantes,
+            centrarEnArea: tipo == 2);
+        InstanciarEstudiantes(estudiantes);
+    }
+
+    private void CalcularLayoutAula(
+        out Vector3 posProf, out float rotYProf, out float rotYEst,
+        out float minX, out float maxX, out float minZ, out float maxZ,
+        float margenPared, float espacioCamino)
+    {
+        float medioX = anchoLibre / 2f;
+        float medioZ = largoLibre / 2f;
+
+        if (puertaEnDerecha || puertaEnIzquierda)
         {
-            // ── Puerta en pared DERECHA (+X) o IZQUIERDA (-X) ────────
-            // El profesor se coloca en esa misma pared, en la esquina +Z (frente del aula).
-            // Tras la rotación del escritorio:
-            //   Door RIGHT: prof gira 270° → local Z (1.4m) queda en -X → pegado a pared +X
-            //                                local X (2m) queda en +Z → esquina +Z
-            //   Door LEFT:  prof gira  90° → local Z (1.4m) queda en +X → pegado a pared -X
-            //                                local X (2m) queda en -Z → usamos +Z esquina también
+            // El profesor se ubica en la pared opuesta a la puerta, en una
+            // esquina sin puertas, y mira a lo largo de esa misma pared.
+            float paredSinPuertaX = puertaEnDerecha ? -medioX : medioX;
+            posProf = new Vector3(
+                paredSinPuertaX + (puertaEnDerecha ? PROF_HALF_X : -PROF_HALF_X),
+                grosorSuelo,
+                -medioZ + PROF_HALF_Z);
+            rotYProf = 0f;  // Frente local +Z, hacia la otra esquina sin puerta.
+            rotYEst = 180f; // El frente local +Z queda orientado hacia la esquina del profesor.
 
-            if (puertaEnDerecha)
+            float margenIzquierdo = margenPared;
+            float margenDerecho = margenPared;
+            if (tipo != 2)
             {
-                // Profesor en esquina (+X, +Z)
-                // Rotado 270°: frente → -X (mira hacia el interior)
-                // World extents: ±PROF_HALF_Z en X, ±PROF_HALF_X en Z
-                rotYProf = 270f;
-                float cx = anchoLibre / 2f - PROF_HALF_Z;         // pegado a pared derecha
-                float cz = largoLibre / 2f - PROF_HALF_X;         // pegado a pared frontal
-                posProf = new Vector3(cx, grosorSuelo, cz);
-
-                // Profesor ocupa en mundo: X ∈ [cx - PROF_HALF_Z, cx + PROF_HALF_Z]
-                //                          Z ∈ [cz - PROF_HALF_X, cz + PROF_HALF_X]
-                // Borde izquierdo del prof (en X): cx - PROF_HALF_Z = anchoLibre/2 - 2*PROF_HALF_Z
-
-                rotYEst = 90f;  // estudiantes miran hacia +X (hacia el profesor)
-                // Tras rotY=90° del pupitre estudiante:
-                //   local X (1.2m) → mundo -Z (±EST_HALF_X en Z)
-                //   local Z (1.8m) → mundo +X (±EST_HALF_Z en X, profundidad hacia el prof)
-
-                // Área de estudiantes:
-                float estMaxX = (cx - PROF_HALF_Z) - MARGEN_PROF - EST_HALF_Z; // frente: tras borde izq prof + 1m
-                float estMinX = -anchoLibre / 2f + MARGEN_PARED + EST_HALF_Z;   // fondo: 1m de pared izq
-                float estMaxZ =  largoLibre / 2f - MARGEN_PARED - EST_HALF_X;   // 1m de pared frontal
-                float estMinZ = -largoLibre / 2f + MARGEN_PARED + EST_HALF_X;   // 1m de pared trasera
-
-                // Columnas corren en Z (ancho de pupitres en Z), separadas en X (profundidad)
-                // Paso en X: profundidad del pupitre (2*EST_HALF_Z) + gap
-                float stepX = 2f * EST_HALF_Z + gapColumnas;
-                float stepZ = 2f * EST_HALF_X + GAP_FILA;         // paso dentro de la columna
-
-                posEst = GenerarGrilla(
-                    minDepth: estMinX, maxDepth: estMaxX, stepDepth: stepX,
-                    minFila: estMinZ,  maxFila: estMaxZ,  stepFila: stepZ,
-                    ejeDepthEnX: true);
+                // En el salón normal solo se reserva el camino junto a la
+                // pared que tiene la doble puerta.
+                if (puertaEnIzquierda) margenIzquierdo = espacioCamino;
+                else margenDerecho = espacioCamino;
             }
-            else // puertaEnIzquierda
-            {
-                // Profesor en esquina (-X, +Z)
-                // Rotado 90°: frente → +X (mira hacia el interior)
-                // World extents: ±PROF_HALF_Z en X, ±PROF_HALF_X en Z
-                rotYProf = 90f;
-                float cx = -anchoLibre / 2f + PROF_HALF_Z;
-                float cz =  largoLibre / 2f - PROF_HALF_X;
-                posProf = new Vector3(cx, grosorSuelo, cz);
 
-                rotYEst = 270f; // estudiantes miran hacia -X (hacia el profesor en izquierda)
-                // Tras rotY=270°: local X → mundo +Z (±EST_HALF_X), local Z → mundo -X (±EST_HALF_Z)
-
-                float estMinX = (cx + PROF_HALF_Z) + MARGEN_PROF + EST_HALF_Z; // desde borde dcho prof
-                float estMaxX =  anchoLibre / 2f - MARGEN_PARED - EST_HALF_Z;
-                float estMaxZ =  largoLibre / 2f - MARGEN_PARED - EST_HALF_X;
-                float estMinZ = -largoLibre / 2f + MARGEN_PARED + EST_HALF_X;
-
-                float stepX = 2f * EST_HALF_Z + gapColumnas;
-                float stepZ = 2f * EST_HALF_X + GAP_FILA;
-
-                // Para pared izquierda, las columnas crecen desde la derecha hacia la izquierda.
-                // Invertimos minDepth y maxDepth para que la iteración vaya de maxX a minX.
-                posEst = GenerarGrillaInversa(
-                    maxDepth: estMaxX, minDepth: estMinX, stepDepth: stepX,
-                    minFila: estMinZ,  maxFila: estMaxZ,  stepFila: stepZ,
-                    ejeDepthEnX: true);
-            }
-        }
-        else if (paredZ)
-        {
-            // ── Puerta en pared FRONTAL (+Z) o TRASERA (-Z) ───────────
-            if (!puertaEnFrontal)
-            {
-                // Profesor en esquina (+Z, -X):  pared frontal, lado izquierdo
-                // Rotado 180°: frente → -Z (mira hacia el interior del aula)
-                // World extents: ±PROF_HALF_X en X, ±PROF_HALF_Z en Z
-                rotYProf = 180f;
-                float cx = -anchoLibre / 2f + PROF_HALF_X;
-                float cz =  largoLibre / 2f - PROF_HALF_Z;
-                posProf = new Vector3(cx, grosorSuelo, cz);
-
-                rotYEst = 0f; // estudiantes miran hacia +Z (hacia el profesor en pared frontal)
-                // Tras rotY=0°: local X → mundo +X (±EST_HALF_X), local Z → mundo +Z (±EST_HALF_Z)
-
-                float estMaxZ = (cz - PROF_HALF_Z) - MARGEN_PROF - EST_HALF_Z;
-                float estMinZ = -largoLibre / 2f + MARGEN_PARED + EST_HALF_Z;
-                float estMaxX =  anchoLibre / 2f - MARGEN_PARED - EST_HALF_X;
-                float estMinX = -anchoLibre / 2f + MARGEN_PARED + EST_HALF_X;
-
-                float stepZ = 2f * EST_HALF_Z + gapColumnas; // profundidad en Z (hacia prof)
-                float stepX = 2f * EST_HALF_X + GAP_FILA;    // filas en X
-
-                // Columnas corren en X, separadas en Z; desde el fondo hacia el frente (+Z)
-                posEst = GenerarGrillaInversa(
-                    maxDepth: estMaxZ, minDepth: estMinZ, stepDepth: stepZ,
-                    minFila: estMinX,  maxFila: estMaxX,  stepFila: stepX,
-                    ejeDepthEnX: false);
-            }
-            else // puertaEnTrasera
-            {
-                // Profesor en esquina (-Z, -X): pared trasera, lado izquierdo
-                // Rotado 0°: frente → +Z (mira hacia el interior del aula)
-                // World extents: ±PROF_HALF_X en X, ±PROF_HALF_Z en Z
-                rotYProf = 0f;
-                float cx = -anchoLibre / 2f + PROF_HALF_X;
-                float cz = -largoLibre / 2f + PROF_HALF_Z;
-                posProf = new Vector3(cx, grosorSuelo, cz);
-
-                rotYEst = 180f; // estudiantes miran hacia -Z (hacia el profesor en pared trasera)
-                // Tras rotY=180°: local X → mundo -X (±EST_HALF_X), local Z → mundo -Z (±EST_HALF_Z)
-
-                float estMinZ = (cz + PROF_HALF_Z) + MARGEN_PROF + EST_HALF_Z;
-                float estMaxZ =  largoLibre / 2f - MARGEN_PARED - EST_HALF_Z;
-                float estMaxX =  anchoLibre / 2f - MARGEN_PARED - EST_HALF_X;
-                float estMinX = -anchoLibre / 2f + MARGEN_PARED + EST_HALF_X;
-
-                float stepZ = 2f * EST_HALF_Z + gapColumnas;
-                float stepX = 2f * EST_HALF_X + GAP_FILA;
-
-                posEst = GenerarGrilla(
-                    minDepth: estMinZ, maxDepth: estMaxZ, stepDepth: stepZ,
-                    minFila: estMinX,  maxFila: estMaxX,  stepFila: stepX,
-                    ejeDepthEnX: false);
-            }
+            minX = -medioX + margenIzquierdo;
+            maxX =  medioX - margenDerecho;
+            minZ = posProf.z + PROF_HALF_Z + espacioCamino;
+            // La pared frente al profesor no lleva margen.
+            maxZ = medioZ;
         }
         else
         {
-            // Sin puerta definida: usar defaults (profesor en esquina +X, +Z mirando -X)
-            rotYProf = 270f;
-            posProf = new Vector3(anchoLibre / 2f - PROF_HALF_Z, grosorSuelo, largoLibre / 2f - PROF_HALF_X);
-            rotYEst = 90f;
-            float estMaxX = anchoLibre / 2f - 2f * PROF_HALF_Z - MARGEN_PROF - EST_HALF_Z;
-            float estMinX = -anchoLibre / 2f + MARGEN_PARED + EST_HALF_Z;
-            float estMaxZ =  largoLibre / 2f - MARGEN_PARED - EST_HALF_X;
-            float estMinZ = -largoLibre / 2f + MARGEN_PARED + EST_HALF_X;
-            float stepX = 2f * EST_HALF_Z + gapColumnas;
-            float stepZ = 2f * EST_HALF_X + GAP_FILA;
-            posEst = GenerarGrilla(estMinX, estMaxX, stepX, estMinZ, estMaxZ, stepZ, ejeDepthEnX: true);
+            // Puerta frontal o trasera: la pared opuesta no tiene puerta.
+            // El profesor queda en una esquina de esa pared y mira hacia la
+            // segunda esquina libre, siguiendo el eje local +Z de su pupitre.
+            bool puertaFrontal = puertaEnFrontal;
+            posProf = new Vector3(
+                -medioX + PROF_HALF_Z,
+                grosorSuelo,
+                puertaFrontal ? -medioZ + PROF_HALF_X : medioZ - PROF_HALF_X);
+            rotYProf = 90f; // Frente local +Z apunta a +X.
+            rotYEst = 270f;
+
+            minX = posProf.x + PROF_HALF_Z + espacioCamino;
+            // La pared frente al profesor no lleva margen.
+            maxX = medioX;
+
+            float margenTrasero = margenPared;
+            float margenFrontal = margenPared;
+            if (tipo != 2)
+            {
+                // En el salón normal solo se reserva el camino junto a la
+                // pared que tiene la doble puerta.
+                if (puertaFrontal) margenFrontal = espacioCamino;
+                else margenTrasero = espacioCamino;
+            }
+
+            minZ = -medioZ + margenTrasero;
+            maxZ =  medioZ - margenFrontal;
+        }
+
+        minX = Mathf.Max(-medioX, minX);
+        maxX = Mathf.Min(medioX, maxX);
+        minZ = Mathf.Max(-medioZ, minZ);
+        maxZ = Mathf.Min(medioZ, maxZ);
+    }
+
+    private void AgregarGrillaEnRectangulo(
+        float minX, float maxX, float minZ, float maxZ, float rotY,
+        float gapColumnas, float gapPupitresEnColumna,
+        List<(Vector3 pos, float rotY)> resultado, bool centrarEnArea = true)
+    {
+        if (resultado == null || maxX <= minX || maxZ <= minZ)
+            return;
+
+        Quaternion rotacion = Quaternion.Euler(0f, rotY, 0f);
+        Quaternion rotacionInversa = Quaternion.Inverse(rotacion);
+        Vector3[] esquinas =
+        {
+            new Vector3(minX, 0f, minZ),
+            new Vector3(minX, 0f, maxZ),
+            new Vector3(maxX, 0f, minZ),
+            new Vector3(maxX, 0f, maxZ),
+        };
+
+        float minLocalX = float.PositiveInfinity;
+        float maxLocalX = float.NegativeInfinity;
+        float minLocalZ = float.PositiveInfinity;
+        float maxLocalZ = float.NegativeInfinity;
+        foreach (Vector3 esquina in esquinas)
+        {
+            Vector3 local = rotacionInversa * esquina;
+            minLocalX = Mathf.Min(minLocalX, local.x);
+            maxLocalX = Mathf.Max(maxLocalX, local.x);
+            minLocalZ = Mathf.Min(minLocalZ, local.z);
+            maxLocalZ = Mathf.Max(maxLocalZ, local.z);
+        }
+
+        // Primero se define la orientación del pupitre; luego cada columna
+        // avanza sobre su eje Z local. El eje X local separa las columnas.
+        List<float> columnas = CalcularCentros(
+            minLocalX + EST_HALF_X, maxLocalX - EST_HALF_X,
+            2f * EST_HALF_X + gapColumnas, centrarEnArea);
+        List<float> pupitresColumna = CalcularCentros(
+            minLocalZ + EST_HALF_Z, maxLocalZ - EST_HALF_Z,
+            2f * EST_HALF_Z + gapPupitresEnColumna, centrarEnArea);
+
+        foreach (float xLocal in columnas)
+        {
+            foreach (float zLocal in pupitresColumna)
+            {
+                Vector3 posLocal = rotacion * new Vector3(xLocal, grosorSuelo, zLocal);
+                resultado.Add((new Vector3(posLocal.x, grosorSuelo, posLocal.z), rotY));
+            }
         }
     }
 
-    /// <summary>
-    /// Genera posiciones en una grilla 2D.
-    /// "Depth" = dirección hacia el profesor (columnas separadas en esta dirección).
-    /// "Fila"  = dirección perpendicular (pupitres dentro de cada columna).
-    /// Avanza desde minDepth hasta maxDepth.
-    /// </summary>
-    private List<Vector3> GenerarGrilla(
-        float minDepth, float maxDepth, float stepDepth,
-        float minFila,  float maxFila,  float stepFila,
-        bool ejeDepthEnX)
+    private static List<float> CalcularCentros(float minCentro, float maxCentro, float paso, bool centrarEnArea = true)
     {
-        var lista = new List<Vector3>();
-        if (maxDepth < minDepth || maxFila < minFila || stepDepth <= 0f || stepFila <= 0f)
-            return lista;
+        var centros = new List<float>();
+        if (paso <= 0f || maxCentro < minCentro)
+            return centros;
 
-        for (float d = minDepth; d <= maxDepth + 0.001f; d += stepDepth)
-        {
-            for (float f = minFila; f <= maxFila + 0.001f; f += stepFila)
-            {
-                float px = ejeDepthEnX ? d : f;
-                float pz = ejeDepthEnX ? f : d;
-                lista.Add(new Vector3(px, grosorSuelo, pz));
-            }
-        }
-        return lista;
-    }
+        int cantidad = Mathf.FloorToInt((maxCentro - minCentro) / paso) + 1;
+        float espacioUsado = (cantidad - 1) * paso;
+        float inicio = centrarEnArea
+            ? (minCentro + maxCentro - espacioUsado) / 2f
+            : minCentro;
+        for (int i = 0; i < cantidad; i++)
+            centros.Add(inicio + i * paso);
 
-    /// <summary>
-    /// Igual que GenerarGrilla pero la profundidad avanza desde maxDepth hasta minDepth
-    /// (útil cuando el profesor está a la izquierda y las columnas se alejan hacia +X).
-    /// </summary>
-    private List<Vector3> GenerarGrillaInversa(
-        float maxDepth, float minDepth, float stepDepth,
-        float minFila,  float maxFila,  float stepFila,
-        bool ejeDepthEnX)
-    {
-        var lista = new List<Vector3>();
-        if (maxDepth < minDepth || maxFila < minFila || stepDepth <= 0f || stepFila <= 0f)
-            return lista;
-
-        for (float d = maxDepth; d >= minDepth - 0.001f; d -= stepDepth)
-        {
-            for (float f = minFila; f <= maxFila + 0.001f; f += stepFila)
-            {
-                float px = ejeDepthEnX ? d : f;
-                float pz = ejeDepthEnX ? f : d;
-                lista.Add(new Vector3(px, grosorSuelo, pz));
-            }
-        }
-        return lista;
+        return centros;
     }
 
     // ─────────────────────────────────────────────────────────────
     // TIPO 3: SALA LIBRE
     //   • Sin pupitre de profesor.
-    //   • Pasillos libres de 1 m junto a: pared con puerta, pared opuesta y pasillo central.
-    //   • Los dos espacios resultantes se llenan con pupitres mirando al pasillo central.
+    //   • Deja una cruz central y un margen libre junto a las paredes.
+    //   • Cada una de las cuatro zonas mira al brazo de la cruz a su lado.
     // ─────────────────────────────────────────────────────────────
     private void GenerarSalaLibre()
     {
         if (pupitreEstudiantesPrefab == null) return;
 
-        const float anchoPasilloCentral = 1f;
-        const float margenPaso = 1f;
-
-        bool puertaEnEjeZ = puertaEnFrontal || puertaEnTrasera;
+        float mitadPasillo = Mathf.Max(0f, espacioCaminoHabitacion) / 2f;
+        float margenPared = Mathf.Max(0f, espacioCaminoHabitacion);
+        float minX = -anchoLibre / 2f + margenPared;
+        float maxX =  anchoLibre / 2f - margenPared;
+        float minZ = -largoLibre / 2f + margenPared;
+        float maxZ =  largoLibre / 2f - margenPared;
 
         var posiciones = new List<(Vector3 pos, float rotY)>();
 
-        if (puertaEnEjeZ)
-        {
-            // Pasillo central corre en Z (en X ≈ 0, ancho 1 m)
-            // Dos bloques: Izquierdo (X < 0) y Derecho (X > 0)
-            float minZ = -largoLibre / 2f + margenPaso + EST_HALF_X;
-            float maxZ =  largoLibre / 2f - margenPaso - EST_HALF_X;
-            if (maxZ < minZ) return;
-            float stepZ = 2f * EST_HALF_X + GAP_FILA;
+        // El camino perimetral y la cruz mantienen su ancho configurable.
+        // La cruz mantiene libres sus cuatro brazos y su cuadrado central.
+        // Las zonas de la izquierda miran hacia +X y las de la derecha hacia -X,
+        // orientadas al camino que queda junto a cada una.
+        AgregarZonaSalaLibre(minX, -mitadPasillo, minZ, -mitadPasillo, 90f, posiciones);
+        AgregarZonaSalaLibre(minX, -mitadPasillo, mitadPasillo, maxZ, 90f, posiciones);
+        AgregarZonaSalaLibre(mitadPasillo, maxX, minZ, -mitadPasillo, 270f, posiciones);
+        AgregarZonaSalaLibre(mitadPasillo, maxX, mitadPasillo, maxZ, 270f, posiciones);
 
-            // Bloque Izquierdo: desde (-anchoLibre/2 + 1m) hasta (-anchoPasilloCentral/2)
-            float xMaxIzq = -anchoPasilloCentral / 2f - EST_HALF_Z;
-            float xMinIzq = -anchoLibre / 2f + margenPaso + EST_HALF_Z;
-            float stepX = 2f * EST_HALF_Z + GAP_FILA;
-            if (xMaxIzq >= xMinIzq)
-            {
-                for (float x = xMaxIzq; x >= xMinIzq - 0.001f; x -= stepX)
-                    for (float z = minZ; z <= maxZ + 0.001f; z += stepZ)
-                        posiciones.Add((new Vector3(x, grosorSuelo, z), 90f)); // mira +X (hacia pasillo)
-            }
+        InstanciarEstudiantes(posiciones, "SalaLibre");
+    }
 
-            // Bloque Derecho: desde (+anchoPasilloCentral/2) hasta (+anchoLibre/2 - 1m)
-            float xMinDer = anchoPasilloCentral / 2f + EST_HALF_Z;
-            float xMaxDer = anchoLibre / 2f - margenPaso - EST_HALF_Z;
-            if (xMaxDer >= xMinDer)
-            {
-                for (float x = xMinDer; x <= xMaxDer + 0.001f; x += stepX)
-                    for (float z = minZ; z <= maxZ + 0.001f; z += stepZ)
-                        posiciones.Add((new Vector3(x, grosorSuelo, z), 270f)); // mira -X (hacia pasillo)
-            }
-        }
-        else
-        {
-            // Pasillo central corre en X (en Z ≈ 0, ancho 1 m)
-            // Dos bloques: Trasero (Z < 0) y Frontal (Z > 0)
-            float minX = -anchoLibre / 2f + margenPaso + EST_HALF_X;
-            float maxX =  anchoLibre / 2f - margenPaso - EST_HALF_X;
-            if (maxX < minX) return;
-            float stepX = 2f * EST_HALF_X + GAP_FILA;
-
-            // Bloque Trasero (Z < 0): mira +Z (hacia pasillo central)
-            float zMaxTras = -anchoPasilloCentral / 2f - EST_HALF_Z;
-            float zMinTras = -largoLibre / 2f + margenPaso + EST_HALF_Z;
-            float stepZ = 2f * EST_HALF_Z + GAP_FILA;
-            if (zMaxTras >= zMinTras)
-            {
-                for (float z = zMaxTras; z >= zMinTras - 0.001f; z -= stepZ)
-                    for (float x = minX; x <= maxX + 0.001f; x += stepX)
-                        posiciones.Add((new Vector3(x, grosorSuelo, z), 0f)); // mira +Z
-            }
-
-            // Bloque Frontal (Z > 0): mira -Z (hacia pasillo central)
-            float zMinFront = anchoPasilloCentral / 2f + EST_HALF_Z;
-            float zMaxFront = largoLibre / 2f - margenPaso - EST_HALF_Z;
-            if (zMaxFront >= zMinFront)
-            {
-                for (float z = zMinFront; z <= zMaxFront + 0.001f; z += stepZ)
-                    for (float x = minX; x <= maxX + 0.001f; x += stepX)
-                        posiciones.Add((new Vector3(x, grosorSuelo, z), 180f)); // mira -Z
-            }
-        }
-
-        // ── Instanciar estudiantes ──────────────────────────────────
-        AsegurarContenedorEstudiantes();
-        int idx = 0;
-        foreach (var (pos, rotY) in posiciones)
-        {
-            if (pupitreEstudiantesPrefab == null) break;
-            GameObject p = Instantiate(pupitreEstudiantesPrefab, contenedorEstudiantes);
-            p.name = $"SalaLibre_{idx++}";
-            p.transform.localPosition = pos;
-            p.transform.localRotation = Quaternion.Euler(0f, rotY, 0f);
-        }
+    private void AgregarZonaSalaLibre(
+        float minX, float maxX, float minZ, float maxZ, float rotY,
+        List<(Vector3 pos, float rotY)> posiciones)
+    {
+        AgregarGrillaEnRectangulo(
+            minX, maxX, minZ, maxZ, rotY,
+            gapColumnas: espacioColumnasPupitres,
+            gapPupitresEnColumna: 0f,
+            resultado: posiciones);
     }
 
     // ─────────────────────────────────────────────────────────────
     // TIPO 4: DIRECCIÓN
-    //   • Solo 1 pupitre profesor, pegado y centrado en la pared
-    //     izquierda (o derecha si no hay izquierda), sin superponer.
+    //   • Solo 1 pupitre profesor, centrado en una pared disponible sin puerta.
     // ─────────────────────────────────────────────────────────────
     private void GenerarDireccion()
     {
         if (pupitreProfesorPrefab == null) return;
+        const float espacioPared = 0.05f;
 
-        // El escritorio en rotY=0 / 180 ocupa ±PROF_HALF_X en X, ±PROF_HALF_Z en Z.
-        // Para pegarlo a una pared lateral (en X), lo giramos 90° o 270°:
-        //   rotY=90°: local X (2m) → -Z, local Z (1.4m) → +X → se pega a la pared +X
-        //   rotY=270°: local X (2m) → +Z, local Z (1.4m) → -X → se pega a la pared -X
-        // Después de la rotación, el escritorio ocupa ±PROF_HALF_Z en X, ±PROF_HALF_X en Z.
-
-        bool usarIzquierda = tieneParedIzquierda;
-        if (!tieneParedIzquierda && tieneParedDerecha) usarIzquierda = false;
-
-        float posX, rotY;
-        if (usarIzquierda)
+        // Busca una pared existente sin puerta; el escritorio queda centrado
+        // contra ella y orientado hacia el interior.
+        if (tieneParedFrontal && cantidadPuertasFrontal == 0 && anchoLibre >= 2f * PROF_HALF_X)
         {
-            // Pegado a pared izquierda (-X), mirando hacia +X (rotY = 90°)
-            posX = -anchoLibre / 2f + PROF_HALF_Z + 0.05f;
-            rotY = 90f;
+            CrearProfesorDireccion(new Vector3(0f, grosorSuelo, largoLibre / 2f - PROF_HALF_Z - espacioPared), 180f);
         }
-        else
+        else if (tieneParedTrasera && cantidadPuertasTrasera == 0 && anchoLibre >= 2f * PROF_HALF_X)
         {
-            // Pegado a pared derecha (+X), mirando hacia -X (rotY = 270°)
-            posX = anchoLibre / 2f - PROF_HALF_Z - 0.05f;
-            rotY = 270f;
+            CrearProfesorDireccion(new Vector3(0f, grosorSuelo, -largoLibre / 2f + PROF_HALF_Z + espacioPared), 0f);
         }
+        else if (tieneParedIzquierda && cantidadPuertasIzquierda == 0 && largoLibre >= 2f * PROF_HALF_X)
+        {
+            CrearProfesorDireccion(new Vector3(-anchoLibre / 2f + PROF_HALF_Z + espacioPared, grosorSuelo, 0f), 90f);
+        }
+        else if (tieneParedDerecha && cantidadPuertasDerecha == 0 && largoLibre >= 2f * PROF_HALF_X)
+        {
+            CrearProfesorDireccion(new Vector3(anchoLibre / 2f - PROF_HALF_Z - espacioPared, grosorSuelo, 0f), 270f);
+        }
+    }
 
-        // Centro en Z = 0 (centro del lado)
+    private void CrearProfesorDireccion(Vector3 posicion, float rotY)
+    {
         instanciaProfesor = Instantiate(pupitreProfesorPrefab, transform);
         instanciaProfesor.name = "PupitreProfesor_Direccion";
-        instanciaProfesor.transform.localPosition = new Vector3(posX, grosorSuelo, 0f);
+        instanciaProfesor.transform.localPosition = posicion;
         instanciaProfesor.transform.localRotation = Quaternion.Euler(0f, rotY, 0f);
     }
 
@@ -532,16 +435,16 @@ public class PupitresConfig : MonoBehaviour
         instanciaProfesor.transform.localRotation = Quaternion.Euler(0f, rotY, 0f);
     }
 
-    private void InstanciarEstudiantes(List<Vector3> posiciones, float rotY)
+    private void InstanciarEstudiantes(List<(Vector3 pos, float rotY)> posiciones, string prefijo = "Pupitre")
     {
         if (pupitreEstudiantesPrefab == null || posiciones == null || posiciones.Count == 0) return;
         AsegurarContenedorEstudiantes();
         for (int i = 0; i < posiciones.Count; i++)
         {
             GameObject p = Instantiate(pupitreEstudiantesPrefab, contenedorEstudiantes);
-            p.name = $"Pupitre_{i:D3}";
-            p.transform.localPosition = posiciones[i];
-            p.transform.localRotation = Quaternion.Euler(0f, rotY, 0f);
+            p.name = $"{prefijo}_{i:D3}";
+            p.transform.localPosition = posiciones[i].pos;
+            p.transform.localRotation = Quaternion.Euler(0f, posiciones[i].rotY, 0f);
         }
     }
 
@@ -569,24 +472,52 @@ public class PupitresConfig : MonoBehaviour
     [ContextMenu("Limpiar Pupitres")]
     public void LimpiarPupitres()
     {
-        // Recolectar hijos a destruir antes de iterar (evitar modificar la jerarquía mientras se itera)
-        var aDestruir = new List<GameObject>();
+        Transform contenedor = contenedorEstudiantes != null
+            ? contenedorEstudiantes
+            : transform.Find("Pupitre de Estudiantes");
+        if (contenedor != null)
+        {
+            for (int i = contenedor.childCount - 1; i >= 0; i--)
+                DestruirInstancia(contenedor.GetChild(i).gameObject);
+        }
+
+        // El contenedor queda disponible para la siguiente regeneración.
         for (int i = transform.childCount - 1; i >= 0; i--)
         {
             Transform hijo = transform.GetChild(i);
-            if (hijo.name.StartsWith("PupitreProfesor") || hijo.name == "Pupitre de Estudiantes")
-                aDestruir.Add(hijo.gameObject);
-        }
-
-        foreach (var go in aDestruir)
-        {
-            if (go == null) continue;
-            if (Application.isPlaying) DestroyImmediate(go);
-            else DestroyImmediate(go);
+            if (hijo.name.StartsWith("PupitreProfesor"))
+                DestruirInstancia(hijo.gameObject);
         }
 
         instanciaProfesor      = null;
-        contenedorEstudiantes  = null;
+        contenedorEstudiantes  = contenedor;
+    }
+
+    private int ContarParedesConPuerta()
+    {
+        int cantidad = 0;
+        if (cantidadPuertasFrontal > 0) cantidad++;
+        if (cantidadPuertasTrasera > 0) cantidad++;
+        if (cantidadPuertasIzquierda > 0) cantidad++;
+        if (cantidadPuertasDerecha > 0) cantidad++;
+        return cantidad;
+    }
+
+    private int ContarParedesConDoblePuerta()
+    {
+        int cantidad = 0;
+        if (cantidadPuertasFrontal >= 2) cantidad++;
+        if (cantidadPuertasTrasera >= 2) cantidad++;
+        if (cantidadPuertasIzquierda >= 2) cantidad++;
+        if (cantidadPuertasDerecha >= 2) cantidad++;
+        return cantidad;
+    }
+
+    private static void DestruirInstancia(GameObject objeto)
+    {
+        if (objeto == null) return;
+        if (Application.isPlaying) Destroy(objeto);
+        else DestroyImmediate(objeto);
     }
 
     // ─────────────────────────────────────────────────────────────

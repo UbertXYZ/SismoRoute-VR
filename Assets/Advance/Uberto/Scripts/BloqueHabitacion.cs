@@ -71,7 +71,7 @@ public class BloqueHabitacion : MonoBehaviour
 
     [Header("Reglas de Puertas")]
     public TipoPuertasBloque tipoPuertas = TipoPuertasBloque.SoloUnaPuerta;
-    [Tooltip("Si está activo, las puertas que se generen hacia pasillos serán dobles")]
+    [Tooltip("Compatibilidad con configuraciones antiguas; el número de puertas se determina por el tipo y altura del pasillo")]
     public bool doblePuerta = false;
 
     [Header("Pasillos en Bordes Exteriores (del Edificio)")]
@@ -98,6 +98,16 @@ public class BloqueHabitacion : MonoBehaviour
     public bool esBloqueEscalera = false;
     [Tooltip("Indica si este bloque está en el último piso")]
     public bool esUltimoPiso = false;
+    [Tooltip("Indica si este bloque pertenece al primer piso")]
+    public bool esPrimerPiso = false;
+
+    [Header("Distribución de pupitres")]
+    [UnityEngine.Serialization.FormerlySerializedAs("espacioPupitres")]
+    [Min(0f)] public float espacioColumnasPupitres = 0.8f;
+    [Min(0f)] public float espacioCaminoHabitacion = 1f;
+
+    private int[,] clasificacionCompartida;
+    private int[,] clasificacionHabitacionesGenerada;
 
     [Header("Instancias Generadas")]
     public TechoPisoConfig techoPisoBase;
@@ -145,7 +155,11 @@ public class BloqueHabitacion : MonoBehaviour
         bool tienePasilloIzquierdo, bool tienePasilloDerecho,
         bool esParedVidrioEste = false,
         bool esExtremoEscalera = false,
-        bool esPisoFinal = false)
+        bool esPisoFinal = false,
+        float nuevoEspacioColumnasPupitres = 0.8f,
+        float nuevoEspacioCaminoHabitacion = 1f,
+        int[,] tiposHabitacionesCompartidos = null,
+        bool esPisoInicial = false)
     {
         m                    = Mathf.Max(1, habitacionesZ);
         n                    = Mathf.Max(1, habitacionesX);
@@ -164,7 +178,16 @@ public class BloqueHabitacion : MonoBehaviour
         pegadoAParedVidrio       = esParedVidrioEste;
         esBloqueEscalera         = esExtremoEscalera;
         esUltimoPiso             = esPisoFinal;
+        esPrimerPiso             = esPisoInicial;
+        espacioColumnasPupitres  = Mathf.Max(0f, nuevoEspacioColumnasPupitres);
+        espacioCaminoHabitacion  = Mathf.Max(0f, nuevoEspacioCaminoHabitacion);
+        clasificacionCompartida  = ClonarMatriz(tiposHabitacionesCompartidos);
         GenerarBloque();
+    }
+
+    public int[,] ObtenerClasificacionHabitaciones()
+    {
+        return ClonarMatriz(clasificacionHabitacionesGenerada);
     }
 
     [ContextMenu("Generar / Regenerar Bloque (PCG)")]
@@ -382,7 +405,7 @@ public class BloqueHabitacion : MonoBehaviour
         HabitacionConfig[,] gridHabs = new HabitacionConfig[m, n];
         Vector3[,] cellCenters = new Vector3[m, n];
 
-        // 1. Instanciar los centros de habitaciones
+        // 1. Calcular centros, sin crear todavía el interior de las habitaciones.
         for (int fila = 0; fila < m; fila++)
         {
             float zMin = CalcularPosicionZBordeTraseroCelda(fila, cortesM) + grosorPared;
@@ -396,20 +419,6 @@ public class BloqueHabitacion : MonoBehaviour
                 float centerX = (xMin + xMax) / 2f;
 
                 cellCenters[fila, col] = new Vector3(centerX, 0f, centerZ);
-
-                GameObject go = Instantiate(habitacionPrefab, transform);
-                go.name = $"Habitacion_{fila}_{col}";
-                go.transform.localPosition = cellCenters[fila, col];
-                go.transform.localRotation = Quaternion.identity;
-
-                HabitacionConfig hab = go.GetComponent<HabitacionConfig>();
-                if (hab != null)
-                {
-                    hab.paredesGestionadasExternamente = true;
-                    hab.ConfigurarDimensiones(tamanoHabitacionX, tamanoHabitacionZ, altoHabitacion, grosorPared, grosorSuelo, grosorTecho);
-                    gridHabs[fila, col] = hab;
-                    habitaciones.Add(hab);
-                }
             }
         }
 
@@ -568,107 +577,77 @@ public class BloqueHabitacion : MonoBehaviour
             }
         }
 
-        // 5. Asignar las paredes y tipo/mobiliario a cada HabitacionConfig
-        // Construcción de rangos de sub-bloques (entre cortesM y cortesN)
-        List<int> limitesZ = new List<int> { 0 };
-        limitesZ.AddRange(cortesM);
-        limitesZ.Add(m);
-
-        List<int> limitesX = new List<int> { 0 };
-        limitesX.AddRange(cortesN);
-        limitesX.Add(n);
-
-        int[,] tiposPorHabitacion = new int[m, n];
-        bool direccionAsignada = false;
-
-        // Si es bloque de escalera: tipo = 3 o tipo = 5 (pequeño almacén)
-        if (esBloqueEscalera)
+        // 5. Con las paredes y puertas ya construidas, clasificar interiores.
+        // Esta fase solo lee las cantidades de puertas; no modifica las paredes.
+        int[,] tiposPorHabitacion = ClasificarHabitaciones(pFrontal, pTrasera, pIzquierda, pDerecha);
+        if (!esBloqueEscalera && esPrimerPiso)
         {
+            ReconciliarClasificacionPrimerPiso(
+                tiposPorHabitacion, pFrontal, pTrasera, pIzquierda, pDerecha);
+        }
+
+        clasificacionHabitacionesGenerada = esBloqueEscalera
+            ? null
+            : ClonarMatriz(tiposPorHabitacion);
+
+        if (!esBloqueEscalera && esUltimoPiso)
+        {
+            var habitacionesSinPasillos = new List<Vector2Int>();
+            var habitacionesLibres = new List<Vector2Int>();
+            var habitacionesAulaOLaboratorio = new List<Vector2Int>();
             for (int fila = 0; fila < m; fila++)
             {
                 for (int col = 0; col < n; col++)
                 {
-                    tiposPorHabitacion[fila, col] = 5; // Pequeño almacén para bloques de escalera
+                    Vector2Int coord = new Vector2Int(fila, col);
+                    if (!TienePasilloCercano(fila, col, cortesM, cortesN))
+                        habitacionesSinPasillos.Add(coord);
+
+                    if (tiposPorHabitacion[fila, col] == 3)
+                        habitacionesLibres.Add(coord);
+                    else if (tiposPorHabitacion[fila, col] == 1 || tiposPorHabitacion[fila, col] == 2)
+                        habitacionesAulaOLaboratorio.Add(coord);
                 }
             }
-        }
-        else
-        {
-            // Clasificación por subloques M x N
-            for (int sz = 0; sz < limitesZ.Count - 1; sz++)
+
+            List<Vector2Int> opciones = habitacionesSinPasillos.Count > 0
+                ? habitacionesSinPasillos
+                : habitacionesLibres.Count > 0
+                    ? habitacionesLibres
+                    : habitacionesAulaOLaboratorio;
+
+            if (opciones.Count > 0)
             {
-                int fMin = limitesZ[sz];
-                int fMax = limitesZ[sz + 1];
-
-                for (int sx = 0; sx < limitesX.Count - 1; sx++)
-                {
-                    int cMin = limitesX[sx];
-                    int cMax = limitesX[sx + 1];
-
-                    // Identificar habitaciones con doble puerta en este sub-bloque
-                    List<Vector2Int> habsConDoblePuerta = new List<Vector2Int>();
-                    List<Vector2Int> otrasHabs = new List<Vector2Int>();
-
-                    for (int f = fMin; f < fMax; f++)
-                    {
-                        for (int c = cMin; c < cMax; c++)
-                        {
-                            bool tieneDoble = (pFrontal[f, c] == 2 || pTrasera[f, c] == 2 ||
-                                               pIzquierda[f, c] == 2 || pDerecha[f, c] == 2);
-                            if (tieneDoble)
-                                habsConDoblePuerta.Add(new Vector2Int(f, c));
-                            else
-                                otrasHabs.Add(new Vector2Int(f, c));
-                        }
-                    }
-
-                    // En cada 3 habitaciones con doble puerta, 1 es tipo 2 (laboratorio) y 2 son tipo 1 (salón normal)
-                    for (int i = 0; i < habsConDoblePuerta.Count; i++)
-                    {
-                        Vector2Int coord = habsConDoblePuerta[i];
-                        // Cada grupo de 3: índices 0,1 -> tipo 1; índice 2 -> tipo 2
-                        if ((i % 3) == 2)
-                            tiposPorHabitacion[coord.x, coord.y] = 2; // Laboratorio
-                        else
-                            tiposPorHabitacion[coord.x, coord.y] = 1; // Salón normal
-                    }
-
-                    // Habitaciones de 1 puerta o sin conexión con pasillo:
-                    // Por defecto son tipo 3 (sala libre).
-                    // Excepto en el último piso donde una habitación sin conexión con pasillo es tipo 4 (dirección).
-                    foreach (var coord in otrasHabs)
-                    {
-                        int f = coord.x;
-                        int c = coord.y;
-
-                        bool pasilloZDerInterno     = cortesN.Contains(c + 1);
-                        bool pasilloZIzqInterno     = cortesN.Contains(c);
-                        bool pasilloXFrontalInterno = cortesM.Contains(f + 1);
-                        bool pasilloXTraseroInterno = cortesM.Contains(f);
-                        bool pasilloZDerExterno     = (c == n - 1) && pasilloEnBordeDerecho;
-                        bool pasilloZIzqExterno     = (c == 0)     && pasilloEnBordeIzquierdo;
-                        bool pasilloXFrontalExterno = (f == m - 1) && pasilloEnBordeFrontal;
-                        bool pasilloXTraseroExterno = (f == 0)     && pasilloEnBordeTrasero;
-
-                        bool tieneContactoConPasillo = pasilloZDerInterno || pasilloZIzqInterno ||
-                                                        pasilloXFrontalInterno || pasilloXTraseroInterno ||
-                                                        pasilloZDerExterno || pasilloZIzqExterno ||
-                                                        pasilloXFrontalExterno || pasilloXTraseroExterno;
-
-                        if (!tieneContactoConPasillo && esUltimoPiso && !direccionAsignada)
-                        {
-                            tiposPorHabitacion[f, c] = 4; // Dirección
-                            direccionAsignada = true;
-                        }
-                        else
-                        {
-                            tiposPorHabitacion[f, c] = 3; // Sala libre
-                        }
-                    }
-                }
+                Vector2Int direccion = opciones[Random.Range(0, opciones.Count)];
+                tiposPorHabitacion[direccion.x, direccion.y] = 4;
             }
         }
 
+        // 6. Crear habitaciones vacías después de fijar puertas y clasificación.
+        for (int fila = 0; fila < m; fila++)
+        {
+            for (int col = 0; col < n; col++)
+            {
+                GameObject go = Instantiate(habitacionPrefab, transform);
+                go.name = $"Habitacion_{fila}_{col}";
+                go.transform.localPosition = cellCenters[fila, col];
+                go.transform.localRotation = Quaternion.identity;
+
+                HabitacionConfig hab = go.GetComponent<HabitacionConfig>();
+                if (hab == null) continue;
+
+                hab.paredesGestionadasExternamente = true;
+                hab.losaPrefab = techoPisoBasePrefab;
+                hab.extenderLosaDerecha = pegadoAParedVidrio && col == n - 1;
+                hab.ConfigurarDimensiones(
+                    tamanoHabitacionX, tamanoHabitacionZ, altoHabitacion,
+                    grosorPared, grosorSuelo, grosorTecho, nuevoTipo: 0);
+                gridHabs[fila, col] = hab;
+                habitaciones.Add(hab);
+            }
+        }
+
+        // 7. Asociar paredes y puertas y crear el mobiliario interior.
         for (int fila = 0; fila < m; fila++)
         {
             for (int col = 0; col < n; col++)
@@ -679,6 +658,8 @@ public class BloqueHabitacion : MonoBehaviour
                     hab.pupitreProfesorPrefab    = pupitreProfesorPrefab;
                     hab.pupitreEstudiantesPrefab = pupitreEstudiantesPrefab;
                     hab.tipo                     = tiposPorHabitacion[fila, col];
+                    hab.espacioColumnasPupitres  = espacioColumnasPupitres;
+                    hab.espacioCaminoHabitacion  = espacioCaminoHabitacion;
 
                     hab.paredFrontal   = wallHFrontalDe[fila, col];
                     hab.paredTrasera   = wallHTraseraDe[fila, col];
@@ -709,7 +690,8 @@ public class BloqueHabitacion : MonoBehaviour
     {
         pFrontal = 0; pTrasera = 0; pIzquierda = 0; pDerecha = 0;
 
-        // Pasillos INTERNOS
+        // Los cortes y pasillos externos pertenecen a este objeto BloqueHabitacion,
+        // que representa exclusivamente el piso actual.
         bool pasilloZDerInterno     = cortesN.Contains(col + 1);
         bool pasilloZIzqInterno     = cortesN.Contains(col);
         bool pasilloXFrontalInterno = cortesM.Contains(fila + 1);
@@ -745,7 +727,7 @@ public class BloqueHabitacion : MonoBehaviour
             return;
         }
 
-        // 3. Pasillos que crecen en dirección Z fuera del bloque
+        // 3. Pasillos externos en Z
         if (pasilloZDerExterno)
         {
             pDerecha = 2;
@@ -773,6 +755,173 @@ public class BloqueHabitacion : MonoBehaviour
         // "se busca habitaciones cercanas en el eje Z y las paredes compartidas con estas dos se convierte en pared con 1 puerta."
         if (fila < m - 1 && !cortesM.Contains(fila + 1)) pFrontal = 1;
         if (fila > 0     && !cortesM.Contains(fila))     pTrasera = 1;
+    }
+
+    private int[,] ClasificarHabitaciones(int[,] frontal, int[,] trasera, int[,] izquierda, int[,] derecha)
+    {
+        int[,] tipos = new int[m, n];
+
+        if (esBloqueEscalera)
+        {
+            for (int fila = 0; fila < m; fila++)
+                for (int col = 0; col < n; col++)
+                    tipos[fila, col] = 5;
+            return tipos;
+        }
+
+        bool mapaCompartidoValido = clasificacionCompartida != null &&
+                                    clasificacionCompartida.GetLength(0) == m &&
+                                    clasificacionCompartida.GetLength(1) == n;
+        if (mapaCompartidoValido)
+        {
+            for (int fila = 0; fila < m; fila++)
+            {
+                for (int col = 0; col < n; col++)
+                {
+                    int tipoCompartido = clasificacionCompartida[fila, col];
+                    tipos[fila, col] = tipoCompartido == 1 || tipoCompartido == 2 ? tipoCompartido : 3;
+                }
+            }
+            return tipos;
+        }
+
+        var salones = new List<Vector2Int>();
+        for (int fila = 0; fila < m; fila++)
+        {
+            for (int col = 0; col < n; col++)
+            {
+                tipos[fila, col] = 3;
+                if (TieneUnaParedDoblePuerta(
+                    frontal[fila, col], trasera[fila, col],
+                    izquierda[fila, col], derecha[fila, col]))
+                {
+                    salones.Add(new Vector2Int(fila, col));
+                    tipos[fila, col] = 1;
+                }
+            }
+        }
+
+        int cantidadLaboratorios = salones.Count / 3;
+        for (int i = 0; i < cantidadLaboratorios; i++)
+        {
+            int indice = Random.Range(0, salones.Count);
+            Vector2Int laboratorio = salones[indice];
+            tipos[laboratorio.x, laboratorio.y] = 2;
+            salones.RemoveAt(indice);
+        }
+
+        return tipos;
+    }
+
+    private static bool TieneUnaParedDoblePuerta(int frontal, int trasera, int izquierda, int derecha)
+    {
+        int paredesConPuerta = 0;
+        int puertasEnUnaPared = 0;
+        int[] puertas = { frontal, trasera, izquierda, derecha };
+        foreach (int cantidad in puertas)
+        {
+            if (cantidad <= 0) continue;
+            paredesConPuerta++;
+            if (cantidad >= 2) puertasEnUnaPared++;
+        }
+
+        return paredesConPuerta == 1 && puertasEnUnaPared == 1;
+    }
+
+    private void ReconciliarClasificacionPrimerPiso(
+        int[,] tipos, int[,] frontal, int[,] trasera, int[,] izquierda, int[,] derecha)
+    {
+        var habitacionesConDoblePuerta = new List<Vector2Int>();
+        var habitacionesPromovidas = new List<Vector2Int>();
+        int laboratoriosActuales = 0;
+
+        for (int fila = 0; fila < m; fila++)
+        {
+            for (int col = 0; col < n; col++)
+            {
+                bool calificaComoAula = TieneUnaParedDoblePuerta(
+                    frontal[fila, col], trasera[fila, col],
+                    izquierda[fila, col], derecha[fila, col]);
+
+                if (!calificaComoAula)
+                {
+                    // Sin una única pared con dos puertas, debe ser Sala Libre.
+                    tipos[fila, col] = 3;
+                    continue;
+                }
+
+                var coord = new Vector2Int(fila, col);
+                habitacionesConDoblePuerta.Add(coord);
+
+                if (tipos[fila, col] == 2)
+                {
+                    laboratoriosActuales++;
+                }
+                else if (tipos[fila, col] != 1)
+                {
+                    // Una Sala Libre del mapa compartido que sí cumple la
+                    // regla de puertas se promueve a Salón antes de repartir labs.
+                    tipos[fila, col] = 1;
+                    habitacionesPromovidas.Add(coord);
+                }
+            }
+        }
+
+        int laboratoriosObjetivo = habitacionesConDoblePuerta.Count / 3;
+        int laboratoriosPorAsignar = Mathf.Max(0, laboratoriosObjetivo - laboratoriosActuales);
+
+        // Se asignan primero entre las habitaciones que debieron cambiar desde
+        // Sala Libre; así las categorías compartidas compatibles se conservan.
+        while (laboratoriosPorAsignar > 0 && habitacionesPromovidas.Count > 0)
+        {
+            int indice = Random.Range(0, habitacionesPromovidas.Count);
+            Vector2Int coord = habitacionesPromovidas[indice];
+            tipos[coord.x, coord.y] = 2;
+            habitacionesPromovidas.RemoveAt(indice);
+            laboratoriosPorAsignar--;
+        }
+
+        // Si la clasificación base tenía más laboratorios de los que corresponden
+        // a este piso, o faltan candidatos promovidos, ajusta solo los necesarios.
+        while (laboratoriosActuales > laboratoriosObjetivo)
+        {
+            var laboratorios = habitacionesConDoblePuerta.FindAll(
+                coord => tipos[coord.x, coord.y] == 2);
+            if (laboratorios.Count == 0) break;
+            Vector2Int coord = laboratorios[Random.Range(0, laboratorios.Count)];
+            tipos[coord.x, coord.y] = 1;
+            laboratoriosActuales--;
+        }
+
+        while (laboratoriosPorAsignar > 0)
+        {
+            var salones = habitacionesConDoblePuerta.FindAll(
+                coord => tipos[coord.x, coord.y] == 1);
+            if (salones.Count == 0) break;
+            Vector2Int coord = salones[Random.Range(0, salones.Count)];
+            tipos[coord.x, coord.y] = 2;
+            laboratoriosPorAsignar--;
+        }
+    }
+
+    private bool TienePasilloCercano(int fila, int col, List<int> cortesM, List<int> cortesN)
+    {
+        return cortesN.Contains(col + 1) || cortesN.Contains(col) ||
+               cortesM.Contains(fila + 1) || cortesM.Contains(fila) ||
+               (col == n - 1 && pasilloEnBordeDerecho) ||
+               (col == 0 && pasilloEnBordeIzquierdo) ||
+               (fila == m - 1 && pasilloEnBordeFrontal) ||
+               (fila == 0 && pasilloEnBordeTrasero);
+    }
+
+    private static int[,] ClonarMatriz(int[,] origen)
+    {
+        if (origen == null) return null;
+        int[,] copia = new int[origen.GetLength(0), origen.GetLength(1)];
+        for (int fila = 0; fila < origen.GetLength(0); fila++)
+            for (int col = 0; col < origen.GetLength(1); col++)
+                copia[fila, col] = origen[fila, col];
+        return copia;
     }
 
     private Transform CrearPared(Vector3 posLocal, Quaternion rotLocal, float largo, float alto, float espesor, int numPuertas, string nombre)

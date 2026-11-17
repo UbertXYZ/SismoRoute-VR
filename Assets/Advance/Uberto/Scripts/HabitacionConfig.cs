@@ -9,6 +9,10 @@ public class HabitacionConfig : MonoBehaviour
     [Range(0, 5)]
     public int tipo = 0;
 
+    [UnityEngine.Serialization.FormerlySerializedAs("espacioPupitres")]
+    [Min(0f)] public float espacioColumnasPupitres = 0.8f;
+    [Min(0f)] public float espacioCaminoHabitacion = 1f;
+
     [Header("Mobiliario")]
     public GameObject pupitreProfesorPrefab;
     public GameObject pupitreEstudiantesPrefab;
@@ -40,6 +44,11 @@ public class HabitacionConfig : MonoBehaviour
     [Min(0f)] public float grosorSuelo = 0f;   // Si es 0, no se crea Losa Inferior
     [Min(0f)] public float grosorTecho = 0f;   // Si es 0, no se crea Losa Superior
     public float altoPared = 0f;
+
+    [Header("Prefab de Losas")]
+    public GameObject losaPrefab;
+    [Tooltip("Extiende ambas losas hasta la cara interior de la pared de vidrio Este")]
+    public bool extenderLosaDerecha = false;
 
     [Header("Habitaciones Partes")]
     public Transform paredFrontal;
@@ -191,20 +200,14 @@ public class HabitacionConfig : MonoBehaviour
         }
 
         if (losaInferior == null)
-        {
-            Transform encontrado = transform.Find("LosaInferior");
-            if (encontrado == null) encontrado = transform.Find("Suelo");
-            if (encontrado != null)
-            {
-                losaInferior = encontrado;
-            }
-        }
-
+            losaInferior = ObtenerOCrearLosa("LosaInferior", "Suelo");
         if (losaInferior == null) return;
 
+        float extensionDerecha = extenderLosaDerecha ? grosorPared : 0f;
         losaInferior.gameObject.SetActive(true);
-        losaInferior.localScale    = new Vector3(ancho, grosorSuelo, largo);
-        losaInferior.localPosition = new Vector3(0f, grosorSuelo / 2f, 0f);
+        losaInferior.localRotation = Quaternion.identity;
+        losaInferior.localScale    = new Vector3(ancho + extensionDerecha, grosorSuelo, largo);
+        losaInferior.localPosition = new Vector3(extensionDerecha / 2f, grosorSuelo / 2f, 0f);
     }
 
     // ──────────────────────────────────────────────────────────
@@ -220,18 +223,32 @@ public class HabitacionConfig : MonoBehaviour
         }
 
         if (losaSuperior == null)
-        {
-            Transform encontrado = transform.Find("LosaSuperior");
-            if (encontrado == null) encontrado = transform.Find("Techo");
-            if (encontrado != null)
-                losaSuperior = encontrado;
-        }
-
+            losaSuperior = ObtenerOCrearLosa("LosaSuperior", "Techo");
         if (losaSuperior == null) return;
 
+        float extensionDerecha = extenderLosaDerecha ? grosorPared : 0f;
         losaSuperior.gameObject.SetActive(true);
-        losaSuperior.localScale    = new Vector3(ancho, grosorTecho, largo);
-        losaSuperior.localPosition = new Vector3(0f, alto - grosorTecho / 2f, 0f);
+        losaSuperior.localRotation = Quaternion.identity;
+        losaSuperior.localScale    = new Vector3(ancho + extensionDerecha, grosorTecho, largo);
+        losaSuperior.localPosition = new Vector3(extensionDerecha / 2f, alto - grosorTecho / 2f, 0f);
+    }
+
+    private Transform ObtenerOCrearLosa(string nombre, string nombreAnterior)
+    {
+        Transform existente = transform.Find(nombre);
+        if (existente == null && !string.IsNullOrEmpty(nombreAnterior))
+            existente = transform.Find(nombreAnterior);
+        if (existente != null)
+            return existente;
+
+        GameObject nueva = losaPrefab != null
+            ? Instantiate(losaPrefab, transform)
+            : GameObject.CreatePrimitive(PrimitiveType.Cube);
+        nueva.name = nombre;
+        nueva.transform.SetParent(transform, false);
+        nueva.transform.localPosition = Vector3.zero;
+        nueva.transform.localRotation = Quaternion.identity;
+        return nueva.transform;
     }
 
     // ──────────────────────────────────────────────────────────
@@ -402,12 +419,22 @@ public class HabitacionConfig : MonoBehaviour
 
         bool tieneParedIzq = (paredIzquierda != null && paredIzquierda.gameObject.activeSelf);
         bool tieneParedDer = (paredDerecha != null && paredDerecha.gameObject.activeSelf);
+        bool tieneParedFrontal = (paredFrontal != null && paredFrontal.gameObject.activeSelf);
+        bool tieneParedTrasera = (paredTrasera != null && paredTrasera.gameObject.activeSelf);
 
         pupitresConfig.Configurar(
             ancho, largo, alto, grosorSuelo, tipo,
             puertasDerecha > 0, puertasIzquierda > 0, puertasFrontal > 0, puertasTrasera > 0,
             tieneParedIzq, tieneParedDer,
-            pupitreProfesorPrefab, pupitreEstudiantesPrefab
+            pupitreProfesorPrefab, pupitreEstudiantesPrefab,
+            espacioColumnasPupitres: espacioColumnasPupitres,
+            espacioCaminoHabitacion: espacioCaminoHabitacion,
+            cantidadPuertasDerecha: puertasDerecha,
+            cantidadPuertasIzquierda: puertasIzquierda,
+            cantidadPuertasFrontal: puertasFrontal,
+            cantidadPuertasTrasera: puertasTrasera,
+            existeParedFrontal: tieneParedFrontal,
+            existeParedTrasera: tieneParedTrasera
         );
     }
 
@@ -432,6 +459,8 @@ public class HabitacionConfig : MonoBehaviour
             pupitreProfesorPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/PupitreProfesor.prefab");
         if (pupitreEstudiantesPrefab == null)
             pupitreEstudiantesPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/PupitreEstudiantes.prefab");
+        if (losaPrefab == null)
+            losaPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/Losa.prefab");
 #endif
     }
 }
