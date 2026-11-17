@@ -9,7 +9,8 @@ using UnityEngine.AI;
 // Si un bloqueo le corta el camino, busca otra salida.
 // Efecto rebaño: algunos no eligen salida, siguen a la persona que huye más cerca.
 // Rescate: el jugador puede tocar a un paralizado o desorientado para que lo siga hasta la salida.
-// Al salir del edificio: llora por el susto, camina al punto de encuentro y celebra.
+// Voz (solo después de la alarma): gritan al huir, lloran si se paralizan, conversan al salir.
+// Al salir del edificio: se queda un momento en la salida, camina al punto de encuentro y celebra.
 [RequireComponent(typeof(NavMeshAgent))]
 public class NPCComportamiento : MonoBehaviour
 {
@@ -55,12 +56,25 @@ public class NPCComportamiento : MonoBehaviour
     [Tooltip("Segundos que se queda en la salida antes de ir al punto de encuentro (varía ±20%).")]
     public float tiempoCansado = 10f;
 
+    [Header("Voz (solo después de la alarma)")]
+    [Tooltip("Gritos: se usan al huir o correr desorientado. Pon varios para que no suenen todos igual.")]
+    public AudioClip[] gritos;
+    [Tooltip("Llantos: se usan al paralizarse.")]
+    public AudioClip[] llantos;
+    [Tooltip("Conversaciones al llegar a la salida y en el punto de encuentro.")]
+    public AudioClip[] charlas;
+    [Tooltip("Segundos de silencio entre un grito y el siguiente.")]
+    public Vector2 pausaEntreGritos = new Vector2(3f, 8f);
+    [Range(0f, 1f)] public float volumenVoz = 0.8f;
+    [Tooltip("Hasta qué distancia (metros) se escucha a esta persona.")]
+    public float distanciaVoz = 12f;
+
     [Header("Animator (nombres de parámetros y estados)")]
     public string paramVelocidad = "Velocidad";
     public string paramPanico = "Panico";
     public string estadoLocomocion = "Locomocion";
     public string estadoParalizado = "Crying";
-    public string estadoCansado = "Crying";
+    public string estadoCansado = "Nervously Look Around";
     public string estadoFeliz = "Victory";
 
     NavMeshAgent agente;
@@ -76,6 +90,11 @@ public class NPCComportamiento : MonoBehaviour
     NPCComportamiento lider;
     bool rescatado;
     Transform jugador;
+    AudioSource voz;
+    Coroutine rutinaGritos;
+    bool atascado;
+    float inmuneHasta;
+    Coroutine rutinaSinRumbo;
 
     // Contador global de personas rescatadas por el jugador
     public static int Rescatados { get; private set; }
@@ -88,6 +107,16 @@ public class NPCComportamiento : MonoBehaviour
     {
         agente = GetComponent<NavMeshAgent>();
         animator = GetComponentInChildren<Animator>();
+
+        // Fuente de voz 3D (se crea sola si el prefab no la tiene)
+        voz = GetComponent<AudioSource>();
+        if (voz == null) voz = gameObject.AddComponent<AudioSource>();
+        voz.playOnAwake = false;
+        voz.spatialBlend = 1f;
+        voz.rolloffMode = AudioRolloffMode.Linear;
+        voz.minDistance = 1f;
+        voz.maxDistance = distanciaVoz;
+        voz.volume = volumenVoz;
     }
 
     void OnEnable() { EventosSismo.Alarma += OnAlarma; }
@@ -115,6 +144,7 @@ public class NPCComportamiento : MonoBehaviour
 
     void Update()
     {
+        if (atascado) return;   // atascado en una aglomeración: espera a que se libere
         if (animator != null)
             animator.SetFloat(paramVelocidad, agente.velocity.magnitude);
 
@@ -218,17 +248,20 @@ public class NPCComportamiento : MonoBehaviour
                 agente.isStopped = true;
                 agente.ResetPath();
                 if (animator != null) animator.CrossFade(estadoParalizado, 0.3f);
+                Llorar();
                 break;
 
             case Reaccion.Desorientarse:
                 agente.speed = velocidadHuida;
                 if (animator != null) animator.SetBool(paramPanico, true);
-                StartCoroutine(CorrerSinRumbo());
+                Gritar();
+                rutinaSinRumbo = StartCoroutine(CorrerSinRumbo());
                 break;
 
             default: // Huir
                 agente.speed = velocidadHuida;
                 if (animator != null) animator.SetBool(paramPanico, true);
+                Gritar();
                 if (Random.value < probabilidadSeguir && BuscarLider())
                     siguiendo = true;   // efecto rebaño: va detrás de otro
                 else
@@ -311,7 +344,7 @@ public class NPCComportamiento : MonoBehaviour
     // Llamar desde el XR Simple Interactable del prefab: Select Entered → AlSerTocado()
     public void AlSerTocado()
     {
-        if (!reaccionando || rescatado || salio) return;
+        if (!reaccionando || rescatado || salio || atascado) return;
         if (reaccion == Reaccion.Huir) return;              // los que ya huyen no necesitan ayuda
 
         Camera cam = Camera.main;
@@ -323,6 +356,7 @@ public class NPCComportamiento : MonoBehaviour
         rescatado = true;
         jugador = cam.transform;
         StopAllCoroutines();                                // deja de correr sin rumbo
+        Callar();                                           // se calma al ser rescatado
         agente.isStopped = false;
         agente.speed = velocidadHuida;                      // para poder seguir al jugador
         if (animator != null)
@@ -438,13 +472,14 @@ public class NPCComportamiento : MonoBehaviour
 
     IEnumerator CansancioYEncuentro(ZonaEncuentro[] zonas)
     {
-        // 1) En la puerta de salida: llora por el susto (Crying)
+        // 1) En la puerta de salida: se queda un momento conversando
         agente.isStopped = true;
         if (animator != null)
         {
             animator.SetBool(paramPanico, false);
             animator.CrossFade(estadoCansado, 0.3f);
         }
+        Hablar();
         yield return new WaitForSeconds(tiempoCansado * Random.Range(0.8f, 1.2f));
 
         // 2) Caminar a la zona de encuentro más cercana
@@ -470,6 +505,96 @@ public class NPCComportamiento : MonoBehaviour
         dir.y = 0f;
         if (dir.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(dir);
         if (animator != null) animator.CrossFade(estadoFeliz, 0.3f);
+        // sigue conversando en el punto de encuentro
+    }
+
+    // ---------- Aglomeración ----------
+
+    // Lo consulta el DetectorAglomeracion: solo gente que huye o corre sin rumbo, y una sola vez
+    public bool PuedeAtascarse =>
+        reaccionando && !atascado && Time.time >= inmuneHasta && !salio && !rescatado
+        && reaccion != Reaccion.Paralizarse && agente.enabled;
+
+    public void EntrarAtasco()
+    {
+        atascado = true;
+        if (rutinaSinRumbo != null) { StopCoroutine(rutinaSinRumbo); rutinaSinRumbo = null; }
+        agente.isStopped = true;
+        agente.ResetPath();
+        agente.enabled = false;                              // que el bloqueo no lo empuje fuera del NavMesh
+        if (animator != null)
+        {
+            animator.SetBool(paramPanico, false);
+            animator.CrossFade(estadoParalizado, 0.3f);      // llora (Crying)
+        }
+        Llorar();
+    }
+
+    public void SalirAtasco(float inmunidad)
+    {
+        if (!atascado) return;
+        atascado = false;
+        inmuneHasta = Time.time + inmunidad;                 // un tiempo sin poder atascarse otra vez
+        agente.enabled = true;
+        agente.Warp(transform.position);
+        agente.isStopped = false;
+        agente.speed = velocidadHuida;
+        if (animator != null)
+        {
+            animator.SetBool(paramPanico, true);
+            animator.CrossFade(estadoLocomocion, 0.3f);
+        }
+        Gritar();
+        if (siguiendo) return;                               // sigue a su líder
+        if (reaccion == Reaccion.Desorientarse) rutinaSinRumbo = StartCoroutine(CorrerSinRumbo());
+        else IrASalida();
+    }
+
+    // ---------- Voz ----------
+
+    // Grita de vez en cuando (no sin parar), con tono distinto cada vez
+    void Gritar()
+    {
+        Callar();
+        if (gritos == null || gritos.Length == 0) return;
+        rutinaGritos = StartCoroutine(RutinaGritos());
+    }
+
+    IEnumerator RutinaGritos()
+    {
+        yield return new WaitForSeconds(Random.Range(0f, 1.5f));   // que no griten todos a la vez
+        while (true)
+        {
+            AudioClip clip = gritos[Random.Range(0, gritos.Length)];
+            voz.loop = false;
+            voz.pitch = Random.Range(0.9f, 1.15f);
+            voz.clip = clip;
+            voz.Play();
+            yield return new WaitForSeconds(clip.length / voz.pitch + Random.Range(pausaEntreGritos.x, pausaEntreGritos.y));
+        }
+    }
+
+    // Llora en bucle (paralizados)
+    void Llorar() { SonarEnBucle(llantos); }
+
+    // Habla en bucle (en la salida y en el punto de encuentro)
+    void Hablar() { SonarEnBucle(charlas); }
+
+    void SonarEnBucle(AudioClip[] lista)
+    {
+        Callar();
+        if (lista == null || lista.Length == 0) return;
+        voz.clip = lista[Random.Range(0, lista.Length)];
+        voz.loop = true;
+        voz.pitch = Random.Range(0.92f, 1.08f);
+        voz.time = Random.Range(0f, voz.clip.length * 0.5f);         // que no suenen todos sincronizados
+        voz.Play();
+    }
+
+    void Callar()
+    {
+        if (rutinaGritos != null) { StopCoroutine(rutinaGritos); rutinaGritos = null; }
+        if (voz != null) voz.Stop();
     }
 
     bool LlegoADestino()
