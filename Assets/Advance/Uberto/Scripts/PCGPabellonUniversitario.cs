@@ -27,6 +27,13 @@ public class PCGPabellonUniversitario : MonoBehaviour
     [Tooltip("Ancho de los pasillos por defecto (4 m)")]
     public float anchoPasillos = 4f;
 
+    [UnityEngine.Serialization.FormerlySerializedAs("espacioPupitres")]
+    [Tooltip("Separación entre columnas de pupitres en salones y salas libres")]
+    [Min(0f)] public float espacioColumnasPupitres = 0.8f;
+
+    [Tooltip("Ancho de caminos en habitaciones y separación de pupitres respecto al profesor")]
+    [Min(0f)] public float espacioCaminoHabitacion = 1f;
+
     [Tooltip("Grosor o espesor de las losas de piso (0.25 m)")]
     public float grosorPisos = 0.25f;
 
@@ -69,10 +76,10 @@ public class PCGPabellonUniversitario : MonoBehaviour
     public float grosorLosaSuperiorPasillo = 0f;
 
     [Tooltip("Grosor de la Losa Inferior (Suelo) de las habitaciones (0 = no se crea)")]
-    public float grosorSueloHabitacion = 0f;
+    public float grosorLosaInferiorHabitacion = 0f;
 
     [Tooltip("Grosor de la Losa Superior (Techo) de las habitaciones (0 = no se crea)")]
-    public float grosorTechoHabitacion = 0f;
+    public float grosorLosaSuperiorHabitacion = 0f;
 
     [Header("Límites de Espacio Interior Vacío para Habitaciones")]
     [Tooltip("Largo mínimo Z del espacio interior en habitaciones del bloque central")]
@@ -107,6 +114,8 @@ public class PCGPabellonUniversitario : MonoBehaviour
     [Header("Instancias Generadas")]
     public List<GameObject> pisosGenerados = new List<GameObject>();
     public GameObject contenedorParedesExteriores;
+
+    [System.NonSerialized] private int[,] clasificacionHabitacionesCentral;
 
     // ──────────────────────────────────────────────────────────
     // UNITY CALLBACKS
@@ -149,6 +158,7 @@ public class PCGPabellonUniversitario : MonoBehaviour
         CargarPrefabsSiEsNecesario();
         CalcularDimensiones();
         LimpiarCampus();
+        clasificacionHabitacionesCentral = null;
 
         switch (tipoEdificio)
         {
@@ -175,7 +185,9 @@ public class PCGPabellonUniversitario : MonoBehaviour
             new Vector3(0f, -grosorPisos / 2f, 0f),
             anchoPabellon, largoPabellon, igualarMateriales: false);
 
-        for (int piso = 0; piso < numeroPisos; piso++)
+        // Se genera primero el piso superior, que no tiene el pasillo de acceso
+        // exclusivo del primer piso; su mapa central sirve de referencia común.
+        for (int piso = numeroPisos - 1; piso >= 0; piso--)
         {
             float elevacionY = piso * alturaNivel;
             GameObject contenedorPiso = new GameObject($"Piso_{piso + 1}");
@@ -366,7 +378,8 @@ public class PCGPabellonUniversitario : MonoBehaviour
             anchoAreaCentral, largoPasillosZ, hayPasilloZ,
             esParedVidrioEste: enPisosConVidrio,
             tienePasilloDerecho: esPrimerPiso,
-            esUltimoPiso: esUltimoPiso);
+            esUltimoPiso: esUltimoPiso,
+            esPrimerPiso: esPrimerPiso);
 
         // ─────────────────────────────────────────────────────
         // F. VEREDA DE ENTRADA (solo en el PRIMER PISO, piso==0)
@@ -656,8 +669,8 @@ public class PCGPabellonUniversitario : MonoBehaviour
             // Propagar configuración de losas y prefabs
             bloque.grosorLosaInferiorPasillo = grosorLosaInferiorPasillo;
             bloque.grosorLosaSuperiorPasillo = grosorLosaSuperiorPasillo;
-            bloque.grosorSuelo = grosorSueloHabitacion;
-            bloque.grosorTecho = grosorTechoHabitacion;
+            bloque.grosorSuelo = grosorLosaInferiorHabitacion;
+            bloque.grosorTecho = grosorLosaSuperiorHabitacion;
             bloque.grosorPared = grosorPared;
             if (losaPrefab != null) bloque.techoPisoBasePrefab = losaPrefab;
             if (pupitreProfesorPrefab != null) bloque.pupitreProfesorPrefab = pupitreProfesorPrefab;
@@ -670,13 +683,15 @@ public class PCGPabellonUniversitario : MonoBehaviour
                 haciaZPositiva, !haciaZPositiva, false, tienePasilloDerecho,
                 esParedVidrioEste,
                 esExtremoEscalera: true,
-                esPisoFinal: esUltimoPiso
+                esPisoFinal: esUltimoPiso,
+                nuevoEspacioColumnasPupitres: espacioColumnasPupitres,
+                nuevoEspacioCaminoHabitacion: espacioCaminoHabitacion
             );
         }
         return bloque;
     }
 
-    private BloqueHabitacion CrearBloqueCentral(Transform padre, Vector3 localPos, float anchoTotalX, float largoTotalZ, bool hayPasilloZ, bool esParedVidrioEste = false, bool tienePasilloDerecho = false, bool esUltimoPiso = false)
+    private BloqueHabitacion CrearBloqueCentral(Transform padre, Vector3 localPos, float anchoTotalX, float largoTotalZ, bool hayPasilloZ, bool esParedVidrioEste = false, bool tienePasilloDerecho = false, bool esUltimoPiso = false, bool esPrimerPiso = false)
     {
         GameObject go = ObtenerOInstanciar(bloqueHabitacionPrefab, padre, "BloqueHabitaciones_Central");
         go.transform.localPosition = localPos;
@@ -724,8 +739,8 @@ public class PCGPabellonUniversitario : MonoBehaviour
 
             bloque.grosorLosaInferiorPasillo = grosorLosaInferiorPasillo;
             bloque.grosorLosaSuperiorPasillo = grosorLosaSuperiorPasillo;
-            bloque.grosorSuelo = grosorSueloHabitacion;
-            bloque.grosorTecho = grosorTechoHabitacion;
+            bloque.grosorSuelo = grosorLosaInferiorHabitacion;
+            bloque.grosorTecho = grosorLosaSuperiorHabitacion;
             bloque.grosorPared = grosorPared;
             if (losaPrefab != null) bloque.techoPisoBasePrefab = losaPrefab;
             if (pupitreProfesorPrefab != null) bloque.pupitreProfesorPrefab = pupitreProfesorPrefab;
@@ -738,8 +753,15 @@ public class PCGPabellonUniversitario : MonoBehaviour
                 true, true, hayPasilloZ, tienePasilloDerecho,
                 esParedVidrioEste,
                 esExtremoEscalera: false,
-                esPisoFinal: esUltimoPiso
+                esPisoFinal: esUltimoPiso,
+                nuevoEspacioColumnasPupitres: espacioColumnasPupitres,
+                nuevoEspacioCaminoHabitacion: espacioCaminoHabitacion,
+                tiposHabitacionesCompartidos: clasificacionHabitacionesCentral,
+                esPisoInicial: esPrimerPiso
             );
+
+            if (clasificacionHabitacionesCentral == null)
+                clasificacionHabitacionesCentral = bloque.ObtenerClasificacionHabitaciones();
         }
         return bloque;
     }

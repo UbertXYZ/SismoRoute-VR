@@ -216,6 +216,7 @@ MonoBehaviour:
   grosorSuelo: 0.125
   grosorTecho: 0.125
   altoPared: 4.25
+  losaPrefab: {fileID: 6992141809914314895, guid: 36a57fb8a55cbab4d96aac6316d924a6, type: 3}
   paredFrontal: {fileID: 0}
   paredTrasera: {fileID: 0}
   paredIzquierda: {fileID: 0}
