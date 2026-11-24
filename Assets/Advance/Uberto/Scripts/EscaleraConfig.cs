@@ -3,11 +3,19 @@ using UnityEngine;
 public class EscaleraConfig : MonoBehaviour
 {
     [Header("Escalera Configuracion")]
-    public GameObject bloqueo;
-    public bool bloqueado = false;
-    public void Configurar(bool bloquearEscalera)
+    public GameObject paredBajada;
+    public GameObject bloqueoBajada;
+    public BloqueoEscalera escaleraBloqueo;
+    public bool conPared = false;
+
+    public void Configurar(bool conPared)
     {
-        bloqueado = bloquearEscalera;
-        bloqueo.SetActive(bloqueado);
+        this.conPared = conPared;
+
+        if (paredBajada != null)
+            paredBajada.SetActive(conPared);
+
+        if (bloqueoBajada != null)
+            bloqueoBajada.SetActive(!conPared);
     }
 }

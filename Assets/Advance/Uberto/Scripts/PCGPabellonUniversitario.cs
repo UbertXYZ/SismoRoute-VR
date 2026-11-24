@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -96,6 +97,7 @@ public class PCGPabellonUniversitario : MonoBehaviour
     // PREFABS
     // ──────────────────────────────────────────────────────────
     [Header("Prefabs Requeridos")]
+    public GameObject pisoPrefab;
     public GameObject techoPisoPrefab;
     public GameObject losaPrefab;   // Assets/Advance/Uberto/Models/TechoPisoBase.fbx
     public GameObject bloqueHabitacionPrefab;
@@ -115,7 +117,7 @@ public class PCGPabellonUniversitario : MonoBehaviour
     public List<GameObject> pisosGenerados = new List<GameObject>();
     public GameObject contenedorParedesExteriores;
 
-    [System.NonSerialized] private int[,] clasificacionHabitacionesCentral;
+    [System.NonSerialized] public int[,] clasificacionHabitacionesCentral;
 
     // ──────────────────────────────────────────────────────────
     // UNITY CALLBACKS
@@ -137,6 +139,7 @@ public class PCGPabellonUniversitario : MonoBehaviour
     [ContextMenu("Calcular Dimensiones")]
     public void CalcularDimensiones()
     {
+        numeroPisos = Mathf.Max(1, numeroPisos);
         anchoPabellon = Mathf.Max(12f, anchoPabellon);
         largoPabellon = Mathf.Max(48f, largoPabellon);
 
@@ -158,16 +161,21 @@ public class PCGPabellonUniversitario : MonoBehaviour
         CargarPrefabsSiEsNecesario();
         CalcularDimensiones();
         LimpiarCampus();
-        clasificacionHabitacionesCentral = null;
 
         switch (tipoEdificio)
         {
             case TipoEdificio.Cuadratico:
-                GenerarEdificioCuadratico();
+                if (Application.isPlaying)
+                    StartCoroutine(GenerarEdificioCuadraticoEnParalelo());
+                else
+                    GenerarEdificioCuadratico();
                 break;
             default:
                 Debug.LogWarning($"Tipo {tipoEdificio} en desarrollo. Generando Cuadrático.");
-                GenerarEdificioCuadratico();
+                if (Application.isPlaying)
+                    StartCoroutine(GenerarEdificioCuadraticoEnParalelo());
+                else
+                    GenerarEdificioCuadratico();
                 break;
         }
     }
@@ -177,222 +185,144 @@ public class PCGPabellonUniversitario : MonoBehaviour
     // ──────────────────────────────────────────────────────────
     private void GenerarEdificioCuadratico()
     {
-        float alturaNivel   = alturaPisos + grosorPisos;
-        bool cuatroEscaleras = anchoPabellon >= 24f;
+        List<PisoConfig> pisos = PrepararEdificioCuadratico();
+        foreach (PisoConfig piso in pisos)
+            piso.PrepararPiso();
 
-        // ── Suelo General (Piso 0) ── cuadrado completo, sin extender
+        if (!PrepararClasificacionHabitaciones(pisos))
+        {
+            LimpiarCampus();
+            return;
+        }
+
+        foreach (PisoConfig piso in pisos)
+            piso.CompletarPiso();
+    }
+
+    private IEnumerator GenerarEdificioCuadraticoEnParalelo()
+    {
+        List<PisoConfig> pisos = PrepararEdificioCuadratico();
+        // Las coroutines mantienen la creación de GameObjects en el hilo principal,
+        // y escalonan el trabajo de cada piso entre frames para evitar una sola ráfaga.
+        foreach (PisoConfig piso in pisos)
+        {
+            StartCoroutine(piso.PrepararPisoEnParalelo());
+            yield return null;
+        }
+
+        while (!TodosLosPisosPreparados(pisos))
+            yield return null;
+
+        if (!PrepararClasificacionHabitaciones(pisos))
+        {
+            LimpiarCampus();
+            yield break;
+        }
+
+        foreach (PisoConfig piso in pisos)
+        {
+            StartCoroutine(piso.CompletarPisoEnParalelo());
+            yield return null;
+        }
+
+        while (!TodosLosPisosGenerados(pisos))
+            yield return null;
+    }
+
+    private List<PisoConfig> PrepararEdificioCuadratico()
+    {
+        float alturaNivel = alturaPisos + grosorPisos;
+        bool cuatroEscaleras = anchoPabellon >= 24f;
+        List<PisoConfig> pisos = new List<PisoConfig>(numeroPisos);
+
         CrearLosaCompleta("TechoPiso_SueloGeneral",
             new Vector3(0f, -grosorPisos / 2f, 0f),
             anchoPabellon, largoPabellon, igualarMateriales: false);
 
-        // Se genera primero el piso superior, que no tiene el pasillo de acceso
-        // exclusivo del primer piso; su mapa central sirve de referencia común.
-        for (int piso = numeroPisos - 1; piso >= 0; piso--)
+        // Se crean/configuran primero desde el ultimo piso para fijar una clasificacion unica.
+        for (int indice = numeroPisos - 1; indice >= 0; indice--)
         {
-            float elevacionY = piso * alturaNivel;
-            GameObject contenedorPiso = new GameObject($"Piso_{piso + 1}");
-            contenedorPiso.transform.SetParent(transform, false);
-            contenedorPiso.transform.localPosition = new Vector3(0f, elevacionY, 0f);
-            pisosGenerados.Add(contenedorPiso);
+            GameObject instancia = pisoPrefab != null
+                ? Instantiate(pisoPrefab, transform, false)
+                : new GameObject();
+            instancia.name = "Piso_" + indice;
+            instancia.transform.SetParent(transform, false);
+            instancia.transform.localPosition = new Vector3(0f, indice * alturaNivel, 0f);
+            instancia.transform.localRotation = Quaternion.identity;
 
-            GenerarDistribucionPiso(contenedorPiso.transform, piso, alturaNivel, cuatroEscaleras);
+            PisoConfig configuracion = instancia.GetComponent<PisoConfig>();
+            if (configuracion == null)
+                configuracion = instancia.AddComponent<PisoConfig>();
+            configuracion.ConfigurarDesde(this, indice, alturaNivel, cuatroEscaleras);
 
-            // ── TechoPiso intermedio ──
-            // Solo el 2do (piso==0) y el último (piso==numeroPisos-1) se extienden
-            // en X hacia el Este por grosorParedVidrio para dar apoyo a la pared de vidrio.
-            bool esTechoPisoEspecial = (piso == 0) || (piso == numeroPisos - 1);
-            float extX   = esTechoPisoEspecial ? grosorParedVidrio : 0f;
-            float offsetX = esTechoPisoEspecial ? grosorParedVidrio / 2f : 0f; // desplazar hacia +X
-
-            float alturaDivisorLocal = alturaPisos + grosorPisos / 2f;
-            bool esTechoFinal = (piso == numeroPisos - 1);
-
-            GenerarTechoPisoIntermedio(contenedorPiso.transform,
-                alturaDivisorLocal, largoPabellon, extX, offsetX,
-                cuatroEscaleras, esTechoFinal);
+            pisosGenerados.Add(instancia);
+            pisos.Add(configuracion);
         }
 
-        // ── Paredes exteriores ──
+        // Estas piezas pertenecen al edificio y no a un piso individual.
         if (numeroPisos >= 2)
             GenerarParedesExteriores(alturaNivel);
-    }
 
-    // ──────────────────────────────────────────────────────────
-    // DISTRIBUCIÓN DE CADA PISO
-    // ──────────────────────────────────────────────────────────
-    private void GenerarDistribucionPiso(Transform padrePiso, int indicePiso, float alturaNivel, bool cuatroEscaleras)
-    {
-        float minX = -anchoPabellon / 2f;
-        float maxX =  anchoPabellon / 2f;
-        float minZ = -largoPabellon / 2f;
-        float maxZ =  largoPabellon / 2f;
-
-        bool esPrimerPiso   = indicePiso == 0;
-        bool enPisosConVidrio = indicePiso >= 1;
-        bool esUltimoPiso = (indicePiso == numeroPisos - 1);
-
-        // ─────────────────────────────────────────────────────
-        // A. ESCALERAS
-        //  • Inf. Izquierda → rot 0°
-        //  • Sup. Izquierda → rot 180° en Y
-        //  • Inf. Derecha   → rot 0°   (si cuatroEscaleras, en X=0)
-        //  • Sup. Derecha   → rot 180° en Y (si cuatroEscaleras, en X=0)
-        // ─────────────────────────────────────────────────────
-        CrearEscalera(padrePiso,
-            new Vector3(minX + anchoEscalera / 2f, 0f, minZ + largoEscalera / 2f),
-            Quaternion.identity,
-            "Escalera_Inferior_Izquierda", esPrimerPiso);
-
-        CrearEscalera(padrePiso,
-            new Vector3(minX + anchoEscalera / 2f, 0f, maxZ - largoEscalera / 2f),
-            Quaternion.Euler(0f, 180f, 0f),
-            "Escalera_Superior_Izquierda", esPrimerPiso);
-
-        if (cuatroEscaleras)
+        if (numeroPisos > 0)
         {
-            // Las segundas escaleras arrancan en X = 0 (mitad del ancho)
-            CrearEscalera(padrePiso,
-                new Vector3(anchoEscalera / 2f, 0f, minZ + largoEscalera / 2f),
-                Quaternion.identity,
-                "Escalera_Inferior_Derecha", esPrimerPiso);
-
-            CrearEscalera(padrePiso,
-                new Vector3(anchoEscalera / 2f, 0f, maxZ - largoEscalera / 2f),
-                Quaternion.Euler(0f, 180f, 0f),
-                "Escalera_Superior_Derecha", esPrimerPiso);
-        }
-
-        // ─────────────────────────────────────────────────────
-        // B. BLOQUES EN EXTREMOS (zona de escaleras, Z = largoEscalera)
-        // ─────────────────────────────────────────────────────
-        if (cuatroEscaleras)
-        {
-            // Mitad IZQUIERDA: [minX + anchoEscalera, 0]
-            float anchoBlqIzq = (anchoPabellon / 2f) - anchoEscalera;
-            if (anchoBlqIzq >= 1f)
-            {
-                float centroXBlqIzq = minX + anchoEscalera + anchoBlqIzq / 2f;
-
-                CrearBloqueExtremo(padrePiso,
-                    new Vector3(centroXBlqIzq, 0f, minZ + largoEscalera / 2f),
-                    anchoBlqIzq, largoEscalera,
-                    "BloqueHab_ExtremoInferior_Izq", haciaZPositiva: true,
-                    esUltimoPiso: esUltimoPiso);
-
-                CrearBloqueExtremo(padrePiso,
-                    new Vector3(centroXBlqIzq, 0f, maxZ - largoEscalera / 2f),
-                    anchoBlqIzq, largoEscalera,
-                    "BloqueHab_ExtremoSuperior_Izq", haciaZPositiva: false,
-                    esUltimoPiso: esUltimoPiso);
-            }
-
-            // Mitad DERECHA: [anchoEscalera, maxX]
-            float anchoBlqDer = (anchoPabellon / 2f) - anchoEscalera;
-            if (anchoBlqDer >= 1f)
-            {
-                float centroXBlqDer = anchoEscalera + anchoBlqDer / 2f;
-
-                BloqueHabitacion blqID = CrearBloqueExtremo(padrePiso,
-                    new Vector3(centroXBlqDer, 0f, minZ + largoEscalera / 2f),
-                    anchoBlqDer, largoEscalera,
-                    "BloqueHab_ExtremoInferior_Der", haciaZPositiva: true,
-                    esParedVidrioEste: enPisosConVidrio,
-                    tienePasilloDerecho: false,
-                    esUltimoPiso: esUltimoPiso);
-
-                BloqueHabitacion blqSD = CrearBloqueExtremo(padrePiso,
-                    new Vector3(centroXBlqDer, 0f, maxZ - largoEscalera / 2f),
-                    anchoBlqDer, largoEscalera,
-                    "BloqueHab_ExtremoSuperior_Der", haciaZPositiva: false,
-                    esParedVidrioEste: enPisosConVidrio,
-                    tienePasilloDerecho: false,
-                    esUltimoPiso: esUltimoPiso);
-            }
-        }
-        else
-        {
-            // Solo escaleras a la izquierda; bloques rellenan hacia la derecha
-            float anchoDispBloques = anchoPabellon - anchoEscalera;
-            float centroXBloques   = minX + anchoEscalera + anchoDispBloques / 2f;
-
-            BloqueHabitacion blqI = CrearBloqueExtremo(padrePiso,
-                new Vector3(centroXBloques, 0f, minZ + largoEscalera / 2f),
-                anchoDispBloques, largoEscalera,
-                "BloqueHab_ExtremoInferior", haciaZPositiva: true,
-                esParedVidrioEste: enPisosConVidrio,
-                tienePasilloDerecho: false,
-                esUltimoPiso: esUltimoPiso);
-
-            BloqueHabitacion blqS = CrearBloqueExtremo(padrePiso,
-                new Vector3(centroXBloques, 0f, maxZ - largoEscalera / 2f),
-                anchoDispBloques, largoEscalera,
-                "BloqueHab_ExtremoSuperior", haciaZPositiva: false,
-                esParedVidrioEste: enPisosConVidrio,
-                tienePasilloDerecho: false,
-                esUltimoPiso: esUltimoPiso);
-        }
-
-        // ─────────────────────────────────────────────────────
-        // C. DOS PASILLOS PARALELOS AL EJE X
-        // ─────────────────────────────────────────────────────
-        float posZPasilloXInf = minZ + largoEscalera + anchoPasillos / 2f;
-        CrearPasilloX(padrePiso, new Vector3(0f, 0f, posZPasilloXInf), anchoPabellon, "Pasillo_X_Inferior");
-
-        float posZPasilloXSup = maxZ - largoEscalera - anchoPasillos / 2f;
-        CrearPasilloX(padrePiso, new Vector3(0f, 0f, posZPasilloXSup), anchoPabellon, "Pasillo_X_Superior");
-
-        // ─────────────────────────────────────────────────────
-        // D. PASILLO PARALELO AL EJE Z (Inferior, solo si ancho < 28)
-        // ─────────────────────────────────────────────────────
-        float inicioZ        = minZ + largoEscalera + anchoPasillos;
-        float finZ           = maxZ - largoEscalera - anchoPasillos;
-        float largoPasillosZ = Mathf.Max(1f, finZ - inicioZ);
-        float centroZMedio   = (inicioZ + finZ) / 2f;
-
-        bool hayPasilloZ = anchoPabellon < 28f;
-        if (hayPasilloZ)
-        {
-            float posXPasilloZInf = minX + (anchoPasillos / 2f);
-            CrearPasilloZ(padrePiso, new Vector3(posXPasilloZInf, 0f, centroZMedio), largoPasillosZ, "Pasillo_Z_Inferior");
-        }
-
-        // ─────────────────────────────────────────────────────
-        // E. BLOQUE CENTRAL DE HABITACIONES
-        // ─────────────────────────────────────────────────────
-        float anchoAreaCentral;
-        float centroXCentral;
-
-        if (hayPasilloZ)
-        {
-            anchoAreaCentral = anchoPabellon - anchoPasillos;
-            centroXCentral   = minX + (anchoPasillos + anchoAreaCentral / 2f);
-        }
-        else
-        {
-            anchoAreaCentral = anchoPabellon;
-            centroXCentral   = 0f;
-        }
-
-        BloqueHabitacion blqCentral = CrearBloqueCentral(padrePiso,
-            new Vector3(centroXCentral, 0f, centroZMedio),
-            anchoAreaCentral, largoPasillosZ, hayPasilloZ,
-            esParedVidrioEste: enPisosConVidrio,
-            tienePasilloDerecho: esPrimerPiso,
-            esUltimoPiso: esUltimoPiso,
-            esPrimerPiso: esPrimerPiso);
-
-        // ─────────────────────────────────────────────────────
-        // F. VEREDA DE ENTRADA (solo en el PRIMER PISO, piso==0)
-        //    Pasillo exterior en el lado Este (+X), sin luces, solo losa inferior
-        // ─────────────────────────────────────────────────────
-        if (esPrimerPiso)
-        {
-            float posXVereda = maxX + anchoPasillos / 2f;
-            CrearPasilloVeredaEntrada(padrePiso,
-                new Vector3(posXVereda, 0f, 0f),
+            float xVereda = anchoPabellon / 2f + anchoPasillos / 2f;
+            CrearPasilloVeredaEntrada(transform, new Vector3(xVereda, 0f, 0f),
                 largoPabellon, "Vereda_Entrada_Este");
         }
+
+        return pisos;
     }
+
+    private bool PrepararClasificacionHabitaciones(List<PisoConfig> pisos)
+    {
+        if (pisos == null || pisos.Count == 0)
+            return false;
+
+        // El piso superior crea la matriz una vez; la raiz la conserva y cada piso recibe su copia.
+        if (clasificacionHabitacionesCentral == null)
+        {
+            int[,] clasificacion = pisos[0].PrepararClasificacionCentral();
+            if (clasificacion == null)
+            {
+                Debug.LogError("No se pudo obtener la clasificacion central desde el piso superior.", this);
+                return false;
+            }
+
+            clasificacionHabitacionesCentral = ClonarClasificacion(clasificacion);
+        }
+
+        foreach (PisoConfig piso in pisos)
+            piso.AsignarClasificacionCompartida(clasificacionHabitacionesCentral);
+
+        return true;
+    }
+
+    private static int[,] ClonarClasificacion(int[,] matriz)
+    {
+        if (matriz == null)
+            return null;
+
+        int[,] copia = new int[matriz.GetLength(0), matriz.GetLength(1)];
+        System.Array.Copy(matriz, copia, matriz.Length);
+        return copia;
+    }
+
+    private static bool TodosLosPisosPreparados(List<PisoConfig> pisos)
+    {
+        foreach (PisoConfig piso in pisos)
+            if (piso != null && !piso.PreparacionFinalizada)
+                return false;
+        return true;
+    }
+
+    private static bool TodosLosPisosGenerados(List<PisoConfig> pisos)
+    {
+        foreach (PisoConfig piso in pisos)
+            if (piso != null && !piso.GeneracionFinalizada)
+                return false;
+        return true;
+    }
+
 
     // ──────────────────────────────────────────────────────────
     // PAREDES EXTERIORES
@@ -456,147 +386,8 @@ public class PCGPabellonUniversitario : MonoBehaviour
     }
 
     // ──────────────────────────────────────────────────────────
-    // TECHO PISO INTERMEDIO
+    // PASILLO EXTERIOR
     // ──────────────────────────────────────────────────────────
-    /// <summary>
-    /// Genera las losas del TechoPiso de cada piso.
-    ///
-    /// Cuando cuatroEscaleras == false: 2 escaleras a la izquierda → 3 piezas.
-    /// Cuando cuatroEscaleras == true : 4 escaleras (2 izq + 2 en X=0) → 6 piezas,
-    ///   divididas en dos grupos (izquierda y derecha) tal como lo piden los dos TechoPisos.
-    ///
-    /// extX   = extensión extra en X hacia el Este (0 para pisos normales).
-    /// offsetX = desplazamiento del centro total para que la extensión quede al Este.
-    /// </summary>
-    private void GenerarTechoPisoIntermedio(Transform padrePiso, float alturaY, float largoLosa, float extX, float offsetX, bool cuatroEscaleras, bool igualarMats)
-    {
-        float anchoLosa = anchoPabellon + extX;
-        // La losa se desplaza offsetX en X (hacia +X) para que el margen quede solo al Este
-        float centroXLosa = offsetX;
-
-        float halfAncho = anchoLosa / 2f;
-        float halfLargo = largoLosa / 2f;
-
-        // extremos de la losa en X y Z
-        float losaMinX = centroXLosa - halfAncho;
-        float losaMaxX = centroXLosa + halfAncho;
-
-        if (!cuatroEscaleras)
-        {
-            // ── 2 escaleras a la izquierda ──
-            // Esc Inf Izq: [losaMinX, losaMinX+anchoEscalera] × [-halfLargo, -halfLargo+largoEscalera]
-            // Esc Sup Izq: [losaMinX, losaMinX+anchoEscalera] × [halfLargo-largoEscalera, halfLargo]
-
-            float largoMedio = largoLosa - 2f * largoEscalera;
-
-            // Pieza central (todo el ancho, franja del medio en Z)
-            CrearLosaParte(padrePiso, "TechoPiso_Central",
-                new Vector3(centroXLosa, alturaY, 0f),
-                anchoLosa, largoMedio, igualarMats);
-
-            // Pieza inferior (desde donde acaba la Esc izq hacia la derecha)
-            float anchoLosaInf  = anchoLosa - anchoEscalera;
-            float centroXInf    = losaMinX + anchoEscalera + anchoLosaInf / 2f;
-            CrearLosaParte(padrePiso, "TechoPiso_Inferior",
-                new Vector3(centroXInf, alturaY, -halfLargo + largoEscalera / 2f),
-                anchoLosaInf, largoEscalera, igualarMats);
-
-            // Pieza superior (ídem)
-            CrearLosaParte(padrePiso, "TechoPiso_Superior",
-                new Vector3(centroXInf, alturaY, halfLargo - largoEscalera / 2f),
-                anchoLosaInf, largoEscalera, igualarMats);
-        }
-        else
-        {
-            // ── 4 escaleras: 2 izquierda (en minX) + 2 derecha (en X=0) ──
-            // Bloque IZQUIERDO: desde losaMinX hasta 0
-            float xEscDer_IzqBorde = 0f; // borde izq de la mitad derecha
-            float anchoMitadIzq    = anchoPabellon / 2f; // = 0 - minX
-
-            // → Central izq (entre largoEscalera y largoLosa-largoEscalera en Z)
-            float largoMedio = largoLosa - 2f * largoEscalera;
-            CrearLosaParte(padrePiso, "TechoPiso_IzqCentral",
-                new Vector3(losaMinX + anchoMitadIzq / 2f, alturaY, 0f),
-                anchoMitadIzq, largoMedio, igualarMats);
-
-            // → Inferior izq: hueco entre Esc izq y la pared del bloque derecho (en X=0)
-            float anchoHuecoInfIzq = anchoMitadIzq - anchoEscalera;
-            if (anchoHuecoInfIzq > 0.05f)
-            {
-                float cxInfIzq = losaMinX + anchoEscalera + anchoHuecoInfIzq / 2f;
-                CrearLosaParte(padrePiso, "TechoPiso_IzqInferior",
-                    new Vector3(cxInfIzq, alturaY, -halfLargo + largoEscalera / 2f),
-                    anchoHuecoInfIzq, largoEscalera, igualarMats);
-            }
-            // → Superior izq
-            if (anchoHuecoInfIzq > 0.05f)
-            {
-                float cxSupIzq = losaMinX + anchoEscalera + anchoHuecoInfIzq / 2f;
-                CrearLosaParte(padrePiso, "TechoPiso_IzqSuperior",
-                    new Vector3(cxSupIzq, alturaY, halfLargo - largoEscalera / 2f),
-                    anchoHuecoInfIzq, largoEscalera, igualarMats);
-            }
-
-            // Bloque DERECHO: desde 0 hasta losaMaxX
-            float anchoMitadDer = anchoPabellon / 2f + extX;
-            float cxDer         = xEscDer_IzqBorde + anchoMitadDer / 2f + offsetX;
-
-            // → Central der
-            CrearLosaParte(padrePiso, "TechoPiso_DerCentral",
-                new Vector3(cxDer, alturaY, 0f),
-                anchoMitadDer, largoMedio, igualarMats);
-
-            // → Inferior der: desde borde der Esc der (en X = anchoEscalera) hasta losaMaxX
-            float anchoHuecoInfDer = anchoMitadDer - anchoEscalera;
-            if (anchoHuecoInfDer > 0.05f)
-            {
-                float cxInfDer = xEscDer_IzqBorde + anchoEscalera + anchoHuecoInfDer / 2f + offsetX;
-                CrearLosaParte(padrePiso, "TechoPiso_DerInferior",
-                    new Vector3(cxInfDer, alturaY, -halfLargo + largoEscalera / 2f),
-                    anchoHuecoInfDer, largoEscalera, igualarMats);
-            }
-            // → Superior der
-            if (anchoHuecoInfDer > 0.05f)
-            {
-                float cxSupDer = xEscDer_IzqBorde + anchoEscalera + anchoHuecoInfDer / 2f + offsetX;
-                CrearLosaParte(padrePiso, "TechoPiso_DerSuperior",
-                    new Vector3(cxSupDer, alturaY, halfLargo - largoEscalera / 2f),
-                    anchoHuecoInfDer, largoEscalera, igualarMats);
-            }
-        }
-    }
-
-    // ──────────────────────────────────────────────────────────
-    // HELPERS DE CREACIÓN — PASILLOS
-    // ──────────────────────────────────────────────────────────
-    private void CrearEscalera(Transform padre, Vector3 localPos, Quaternion localRot, string nombre, bool esPrimerPiso)
-    {
-        GameObject go = ObtenerOInstanciar(escaleraPrefab, padre, nombre);
-        go.transform.localPosition = localPos;
-        go.transform.localRotation = localRot;
-
-        EscaleraConfig comp = go.GetComponent<EscaleraConfig>();
-        if (comp != null) comp.Configurar(esPrimerPiso);
-    }
-
-    private void CrearPasilloX(Transform padre, Vector3 localPos, float longitudX, string nombre)
-    {
-        GameObject go = ObtenerOInstanciar(pasilloPrefab, padre, nombre);
-        go.transform.localPosition = localPos;
-        go.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
-
-        ConfigurarPasillo(go, longitudX);
-    }
-
-    private void CrearPasilloZ(Transform padre, Vector3 localPos, float longitudZ, string nombre)
-    {
-        GameObject go = ObtenerOInstanciar(pasilloPrefab, padre, nombre);
-        go.transform.localPosition = localPos;
-        go.transform.localRotation = Quaternion.identity;
-
-        ConfigurarPasillo(go, longitudZ);
-    }
-
     private void CrearPasilloVeredaEntrada(Transform padre, Vector3 localPos, float longitudZ, string nombre)
     {
         GameObject go = ObtenerOInstanciar(pasilloPrefab, padre, nombre);
@@ -614,158 +405,9 @@ public class PCGPabellonUniversitario : MonoBehaviour
             if (losaPrefab != null) pc.losaPrefab = losaPrefab;
         }
     }
-
-    private void ConfigurarPasillo(GameObject go, float longitud)
-    {
-        PasilloConfig pc = go.GetComponent<PasilloConfig>();
-        if (pc != null)
-        {
-            float grosorInf = grosorLosaInferiorPasillo > 0 ? grosorLosaInferiorPasillo : grosorPisos;
-            pc.tieneLuces = true;
-            pc.Configurar(longitud, anchoPasillos, grosorInf, alturaPisos,
-                          conTecho: grosorLosaSuperiorPasillo > 0,
-                          conSuelo: grosorLosaInferiorPasillo > 0);
-            if (losaPrefab != null) pc.losaPrefab = losaPrefab;
-        }
-    }
-
     // ──────────────────────────────────────────────────────────
-    // HELPERS DE CREACIÓN — BLOQUES
+    // HELPERS DE CREACIÓN — GEOMETRÍA EXTERIOR
     // ──────────────────────────────────────────────────────────
-    private BloqueHabitacion CrearBloqueExtremo(Transform padre, Vector3 localPos, float anchoTotalX, float largoZ, string nombre, bool haciaZPositiva, bool esParedVidrioEste = false, bool tienePasilloDerecho = false, bool esUltimoPiso = false)
-    {
-        GameObject go = ObtenerOInstanciar(bloqueHabitacionPrefab, padre, nombre);
-        go.transform.localPosition = localPos;
-        go.transform.localRotation = Quaternion.identity;
-
-        BloqueHabitacion bloque = go.GetComponent<BloqueHabitacion>();
-        if (bloque != null)
-        {
-            float minHabX = Mathf.Max(1f, limiteEscaleraHabitacionX);
-            float minHabZ = Mathf.Max(1f, limiteEscaleraHabitacionZ);
-
-            // Largo interior útil
-            float tamHabZ = Mathf.Max(1f, largoZ - 2f * grosorPared);
-
-            // Calcular cuántas habitaciones caben en anchoTotalX respetando minHabX y paredes compartidas
-            int cantHabX = 1;
-            for (int k = 2; k <= 10; k++)
-            {
-                int cortesZ = 0;
-                for (int j = 2; j < k; j += 2) cortesZ++;
-                int paredesX = (k + 1) + cortesZ;
-                float espacioRequerido = k * minHabX + paredesX * grosorPared + cortesZ * anchoPasillos;
-                if (anchoTotalX >= espacioRequerido) cantHabX = k;
-                else break;
-            }
-
-            int cortesFinZ = 0;
-            for (int j = 2; j < cantHabX; j += 2) cortesFinZ++;
-            int numParedesXFin = (cantHabX + 1) + cortesFinZ;
-            float espacioDisponibleHabs = anchoTotalX - numParedesXFin * grosorPared - cortesFinZ * anchoPasillos;
-            // Si la habitación es inferior al límite y solo es una, se crea de igual forma:
-            float tamHabX = (cantHabX == 1) ? Mathf.Max(0.5f, espacioDisponibleHabs) : Mathf.Max(minHabX, espacioDisponibleHabs / cantHabX);
-
-            // Propagar configuración de losas y prefabs
-            bloque.grosorLosaInferiorPasillo = grosorLosaInferiorPasillo;
-            bloque.grosorLosaSuperiorPasillo = grosorLosaSuperiorPasillo;
-            bloque.grosorSuelo = grosorLosaInferiorHabitacion;
-            bloque.grosorTecho = grosorLosaSuperiorHabitacion;
-            bloque.grosorPared = grosorPared;
-            if (losaPrefab != null) bloque.techoPisoBasePrefab = losaPrefab;
-            if (pupitreProfesorPrefab != null) bloque.pupitreProfesorPrefab = pupitreProfesorPrefab;
-            if (pupitreEstudiantesPrefab != null) bloque.pupitreEstudiantesPrefab = pupitreEstudiantesPrefab;
-
-            bloque.Configurar(
-                1, cantHabX, tamHabX, tamHabZ, alturaPisos,
-                false, false, anchoPasillos,
-                BloqueHabitacion.TipoPuertasBloque.SoloUnaPuerta, false,
-                haciaZPositiva, !haciaZPositiva, false, tienePasilloDerecho,
-                esParedVidrioEste,
-                esExtremoEscalera: true,
-                esPisoFinal: esUltimoPiso,
-                nuevoEspacioColumnasPupitres: espacioColumnasPupitres,
-                nuevoEspacioCaminoHabitacion: espacioCaminoHabitacion
-            );
-        }
-        return bloque;
-    }
-
-    private BloqueHabitacion CrearBloqueCentral(Transform padre, Vector3 localPos, float anchoTotalX, float largoTotalZ, bool hayPasilloZ, bool esParedVidrioEste = false, bool tienePasilloDerecho = false, bool esUltimoPiso = false, bool esPrimerPiso = false)
-    {
-        GameObject go = ObtenerOInstanciar(bloqueHabitacionPrefab, padre, "BloqueHabitaciones_Central");
-        go.transform.localPosition = localPos;
-        go.transform.localRotation = Quaternion.identity;
-
-        BloqueHabitacion bloque = go.GetComponent<BloqueHabitacion>();
-        if (bloque != null)
-        {
-            float minHabZ = Mathf.Max(1f, limiteCentralHabitacionZ);
-            float minHabX = Mathf.Max(1f, limiteCentralHabitacionX);
-
-            // M: habitaciones en Z
-            int cantM = 1;
-            for (int k = 2; k <= 8; k++)
-            {
-                int cortes = 0;
-                for (int p = 6; p < k; p += 3) cortes++;
-                int numParedesZ = (k + 1) + cortes;
-                float espacioNecesario = k * minHabZ + numParedesZ * grosorPared + cortes * anchoPasillos;
-                if (largoTotalZ >= espacioNecesario) cantM = k;
-                else break;
-            }
-            int cortesM = 0;
-            for (int p = 6; p < cantM; p += 3) cortesM++;
-            int numParedesZFin = (cantM + 1) + cortesM;
-            float espacioDisponibleZ = largoTotalZ - numParedesZFin * grosorPared - cortesM * anchoPasillos;
-            float tamZ = (cantM == 1) ? Mathf.Max(0.5f, espacioDisponibleZ) : Mathf.Max(minHabZ, espacioDisponibleZ / cantM);
-
-            // N: habitaciones en X
-            int cantN = 1;
-            for (int k = 2; k <= 6; k++)
-            {
-                int cortes = 0;
-                for (int p = 2; p < k; p += 2) cortes++;
-                int numParedesX = (k + 1) + cortes;
-                float espacioNecesario = k * minHabX + numParedesX * grosorPared + cortes * anchoPasillos;
-                if (anchoTotalX >= espacioNecesario) cantN = k;
-                else break;
-            }
-            int cortesN = 0;
-            for (int p = 2; p < cantN; p += 2) cortesN++;
-            int numParedesXFin = (cantN + 1) + cortesN;
-            float espacioDisponibleX = anchoTotalX - numParedesXFin * grosorPared - cortesN * anchoPasillos;
-            float tamX = (cantN == 1) ? Mathf.Max(0.5f, espacioDisponibleX) : Mathf.Max(minHabX, espacioDisponibleX / cantN);
-
-            bloque.grosorLosaInferiorPasillo = grosorLosaInferiorPasillo;
-            bloque.grosorLosaSuperiorPasillo = grosorLosaSuperiorPasillo;
-            bloque.grosorSuelo = grosorLosaInferiorHabitacion;
-            bloque.grosorTecho = grosorLosaSuperiorHabitacion;
-            bloque.grosorPared = grosorPared;
-            if (losaPrefab != null) bloque.techoPisoBasePrefab = losaPrefab;
-            if (pupitreProfesorPrefab != null) bloque.pupitreProfesorPrefab = pupitreProfesorPrefab;
-            if (pupitreEstudiantesPrefab != null) bloque.pupitreEstudiantesPrefab = pupitreEstudiantesPrefab;
-
-            bloque.Configurar(
-                cantM, cantN, tamX, tamZ, alturaPisos,
-                true, true, anchoPasillos,
-                BloqueHabitacion.TipoPuertasBloque.SoloUnaPuerta, false,
-                true, true, hayPasilloZ, tienePasilloDerecho,
-                esParedVidrioEste,
-                esExtremoEscalera: false,
-                esPisoFinal: esUltimoPiso,
-                nuevoEspacioColumnasPupitres: espacioColumnasPupitres,
-                nuevoEspacioCaminoHabitacion: espacioCaminoHabitacion,
-                tiposHabitacionesCompartidos: clasificacionHabitacionesCentral,
-                esPisoInicial: esPrimerPiso
-            );
-
-            if (clasificacionHabitacionesCentral == null)
-                clasificacionHabitacionesCentral = bloque.ObtenerClasificacionHabitaciones();
-        }
-        return bloque;
-    }
-
     // ──────────────────────────────────────────────────────────
     // HELPERS DE CREACIÓN — PANELES (PRIMITIVOS)
     // ──────────────────────────────────────────────────────────
@@ -841,7 +483,9 @@ public class PCGPabellonUniversitario : MonoBehaviour
     [ContextMenu("Limpiar Campus")]
     public void LimpiarCampus()
     {
+        StopAllCoroutines();
         pisosGenerados.Clear();
+        clasificacionHabitacionesCentral = null;
 
         List<GameObject> toDestroy = new List<GameObject>();
         for (int i = transform.childCount - 1; i >= 0; i--)
@@ -863,6 +507,8 @@ public class PCGPabellonUniversitario : MonoBehaviour
     private void CargarPrefabsSiEsNecesario()
     {
 #if UNITY_EDITOR
+        if (pisoPrefab == null)
+            pisoPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/PisoConfig.prefab");
         if (techoPisoPrefab == null)
             techoPisoPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/BasePrefabs/TechoPiso.prefab");
         if (losaPrefab == null)
@@ -878,7 +524,7 @@ public class PCGPabellonUniversitario : MonoBehaviour
         if (puertaPrefab == null)
             puertaPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/Puerta.prefab");
         if (escaleraPrefab == null)
-            escaleraPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/Escaleras.prefab");
+            escaleraPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/EscaleraEdificio.prefab");
         if (materialVidrio == null)
             materialVidrio = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>("Assets/Advance/Uberto/Vidrio.mat");
         if (pupitreProfesorPrefab == null)

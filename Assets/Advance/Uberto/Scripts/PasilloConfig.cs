@@ -153,9 +153,13 @@ public class PasilloConfig : MonoBehaviour
         int numLuces = Mathf.Max(1, Mathf.RoundToInt(largo / 8f));
         float stepZ  = largo / numLuces;
 
-        // "las luces siempre deben de estar en la parte inferior de la losa superior si existe.
-        //  Sino, en la parte más alta del rango disponible."
-        float posY = tieneTecho ? (altura - alto - 0.05f) : (altura - 0.10f);
+        // El origen del FocoRectangular queda en su cara superior; toca la cara
+        // inferior de la losa o la altura máxima del pasillo si no hay losa.
+        bool hayLosaSuperior = tieneTecho && losasSuperiores != null &&
+            losasSuperiores.gameObject.activeInHierarchy;
+        float posY = hayLosaSuperior
+            ? losasSuperiores.localPosition.y - Mathf.Abs(losasSuperiores.localScale.y) * 0.5f
+            : altura;
 
         int hijosExistentes = contenedorLuces.childCount;
 
@@ -176,7 +180,8 @@ public class PasilloConfig : MonoBehaviour
 
             float posZ = -largo / 2f + (i + 0.5f) * stepZ;
             luzTransform.localPosition = new Vector3(0f, posY, posZ);
-            luzTransform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            // La orientación hacia abajo está en la luz hija del prefab rectangular.
+            luzTransform.localRotation = Quaternion.identity;
         }
 
         // Desactivar excedentes
@@ -224,7 +229,7 @@ public class PasilloConfig : MonoBehaviour
     {
 #if UNITY_EDITOR
         if (luzPrefab == null)
-            luzPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/Spot Light.prefab");
+            luzPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/FocoRectangular.prefab");
         if (losaPrefab == null)
             losaPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/Losa.prefab");
 #endif

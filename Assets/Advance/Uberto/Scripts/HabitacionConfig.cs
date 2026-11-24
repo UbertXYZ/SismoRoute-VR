@@ -113,6 +113,7 @@ public class HabitacionConfig : MonoBehaviour
     [Tooltip("Contenedor hijo de las luces generadas")]
     public Transform contenedorLuces;
     public bool tieneLuces = true;
+    [Min(1)] public int focosMinimos = 1;
 
     [Tooltip("Si es true, las paredes son gestionadas externamente (por BloqueHabitacion)")]
     public bool paredesGestionadasExternamente = false;
@@ -348,22 +349,36 @@ public class HabitacionConfig : MonoBehaviour
         }
 
         contenedorLuces.gameObject.SetActive(true);
+        contenedorLuces.localPosition = Vector3.zero;
+        contenedorLuces.localRotation = Quaternion.identity;
+        contenedorLuces.localScale = Vector3.one;
 
         // Cuántos focos por eje: 1 foco cada 8 m (redondeando: si tamaño < 8 → 1 foco, si 8-15 → 2 focos, etc.)
         int numZ = Mathf.Max(1, Mathf.RoundToInt(largo / 8f));
         int numX = Mathf.Max(1, Mathf.RoundToInt(ancho / 8f));
+        int minimoFocos = Mathf.Max(1, focosMinimos);
+        while (numX * numZ < minimoFocos)
+        {
+            // Aumenta primero el eje con más separación para conservar una cuadrícula uniforme.
+            float separacionX = ancho / numX;
+            float separacionZ = largo / numZ;
+            if (separacionX >= separacionZ)
+                numX++;
+            else
+                numZ++;
+        }
         int totalFocos = numZ * numX;
 
         float stepZ = largo / numZ;
         float stepX = ancho / numX;
 
-        // Posición Y de los focos:
-        // Si hay Losa Superior → cara inferior de ella; sino → parte más alta disponible
-        float posY;
-        if (losaSuperior != null && losaSuperior.gameObject.activeSelf && grosorTecho > 0f)
-            posY = alto - grosorTecho - 0.05f;
-        else
-            posY = alto - 0.10f;
+        // El origen del FocoRectangular queda en su cara superior; esa cara toca
+        // la cara inferior de la losa, o la altura máxima si no hay losa.
+        bool hayLosaSuperior = losaSuperior != null &&
+            losaSuperior.gameObject.activeInHierarchy && grosorTecho > 0f;
+        float posY = hayLosaSuperior
+            ? losaSuperior.localPosition.y - Mathf.Abs(losaSuperior.localScale.y) * 0.5f
+            : alto;
 
         // Ajustar cantidad de hijos
         int hijosExistentes = contenedorLuces.childCount;
@@ -391,7 +406,8 @@ public class HabitacionConfig : MonoBehaviour
                 }
 
                 luzT.localPosition = new Vector3(posX, posY, posZ);
-                luzT.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                // El foco rectangular mantiene el cuerpo horizontal; su luz hija apunta hacia abajo.
+                luzT.localRotation = Quaternion.identity;
                 foco++;
             }
         }
@@ -450,7 +466,7 @@ public class HabitacionConfig : MonoBehaviour
     {
 #if UNITY_EDITOR
         if (luzPrefab == null)
-            luzPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/Spot Light.prefab");
+            luzPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/FocoRectangular.prefab");
         if (puertaPrefab == null)
             puertaPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Advance/Uberto/Prefabs/Puerta.prefab");
         if (paredPrefab == null)
