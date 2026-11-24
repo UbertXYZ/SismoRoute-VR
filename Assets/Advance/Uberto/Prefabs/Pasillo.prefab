@@ -83,7 +83,7 @@ MonoBehaviour:
   tieneSuelo: 0
   tieneTecho: 0
   tieneLuces: 0
-  luzPrefab: {fileID: 3248430678588471082, guid: d5d9c576fe31ed9408a0338570da5d7e, type: 3}
+  luzPrefab: {fileID: 2896867744386478138, guid: 577b68a2b27a6294bbad081e348c620d, type: 3}
   losaPrefab: {fileID: 6992141809914314895, guid: 36a57fb8a55cbab4d96aac6316d924a6, type: 3}
   losasInferiores: {fileID: 0}
   losasSuperiores: {fileID: 0}

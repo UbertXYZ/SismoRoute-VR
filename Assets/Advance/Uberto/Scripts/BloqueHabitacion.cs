@@ -402,6 +402,11 @@ public class BloqueHabitacion : MonoBehaviour
     {
         if (habitacionPrefab == null) return;
 
+        HabitacionConfig configuracionPrefab = habitacionPrefab.GetComponent<HabitacionConfig>();
+        GameObject prefabLuzHabitacion = configuracionPrefab != null
+            ? configuracionPrefab.luzPrefab
+            : null;
+
         HabitacionConfig[,] gridHabs = new HabitacionConfig[m, n];
         Vector3[,] cellCenters = new Vector3[m, n];
 
@@ -638,6 +643,11 @@ public class BloqueHabitacion : MonoBehaviour
 
                 hab.paredesGestionadasExternamente = true;
                 hab.losaPrefab = techoPisoBasePrefab;
+                if (prefabLuzHabitacion != null)
+                    hab.luzPrefab = prefabLuzHabitacion;
+                // Cada habitación generada debe incluir su foco rectangular.
+                hab.tieneLuces = true;
+                hab.focosMinimos = esBloqueEscalera ? 1 : 4;
                 hab.extenderLosaDerecha = pegadoAParedVidrio && col == n - 1;
                 hab.ConfigurarDimensiones(
                     tamanoHabitacionX, tamanoHabitacionZ, altoHabitacion,

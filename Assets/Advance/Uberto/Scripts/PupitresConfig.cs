@@ -78,6 +78,10 @@ public class PupitresConfig : MonoBehaviour
 
     // ── Guard contra re-entrada (OnValidate cascada) ──────────────
     private bool _generando = false;
+#if UNITY_EDITOR
+    private static readonly HashSet<GameObject> destruccionesPendientes = new HashSet<GameObject>();
+    private static bool limpiezaDiferidaProgramada;
+#endif
 
     // ─────────────────────────────────────────────────────────────
     // API PÚBLICA
@@ -516,9 +520,47 @@ public class PupitresConfig : MonoBehaviour
     private static void DestruirInstancia(GameObject objeto)
     {
         if (objeto == null) return;
-        if (Application.isPlaying) Destroy(objeto);
-        else DestroyImmediate(objeto);
+
+        if (Application.isPlaying)
+        {
+            Destroy(objeto);
+            return;
+        }
+
+#if UNITY_EDITOR
+        // HabitacionConfig puede invocar esta limpieza desde OnValidate. Unity
+        // no permite DestroyImmediate durante ese callback, así que diferimos
+        // la destrucción hasta después de terminar la actualización del Inspector.
+        destruccionesPendientes.Add(objeto);
+        if (!limpiezaDiferidaProgramada)
+        {
+            limpiezaDiferidaProgramada = true;
+            UnityEditor.EditorApplication.delayCall += DestruirInstanciasPendientes;
+        }
+#else
+        Destroy(objeto);
+#endif
     }
+
+#if UNITY_EDITOR
+    private static void DestruirInstanciasPendientes()
+    {
+        limpiezaDiferidaProgramada = false;
+        if (destruccionesPendientes.Count == 0) return;
+
+        var objetos = new List<GameObject>(destruccionesPendientes);
+        destruccionesPendientes.Clear();
+        foreach (GameObject objeto in objetos)
+        {
+            if (objeto == null) continue;
+
+            if (Application.isPlaying)
+                Destroy(objeto);
+            else
+                DestroyImmediate(objeto);
+        }
+    }
+#endif
 
     // ─────────────────────────────────────────────────────────────
     // CARGA AUTOMÁTICA DE PREFABS
