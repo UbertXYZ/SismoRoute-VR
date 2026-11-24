@@ -12,6 +12,18 @@ public enum TipoEdificio
 [ExecuteAlways]
 public class PCGPabellonUniversitario : MonoBehaviour
 {
+    public struct UbicacionExtintorCompartida
+    {
+        public Vector3 posicionLocal;
+        public float rotacionY;
+
+        public UbicacionExtintorCompartida(Vector3 posicionLocal, float rotacionY)
+        {
+            this.posicionLocal = posicionLocal;
+            this.rotacionY = rotacionY;
+        }
+    }
+
     [Header("Activación")]
     public bool generarCampus = false;
     public bool limpiarCampus = false;
@@ -118,6 +130,37 @@ public class PCGPabellonUniversitario : MonoBehaviour
     public GameObject contenedorParedesExteriores;
 
     [System.NonSerialized] public int[,] clasificacionHabitacionesCentral;
+    [System.NonSerialized] private List<UbicacionExtintorCompartida> ubicacionesExtintoresCompartidas;
+    [System.NonSerialized] private bool ubicacionesExtintoresCalculadas;
+
+    public bool IntentarObtenerUbicacionesExtintorCompartidas(out List<UbicacionExtintorCompartida> ubicaciones)
+    {
+        if (!ubicacionesExtintoresCalculadas)
+        {
+            ubicaciones = null;
+            return false;
+        }
+
+        ubicaciones = new List<UbicacionExtintorCompartida>(ubicacionesExtintoresCompartidas);
+        return true;
+    }
+
+    public void GuardarUbicacionesExtintorCompartidas(IList<UbicacionExtintorCompartida> ubicaciones)
+    {
+        if (ubicacionesExtintoresCalculadas)
+            return;
+
+        ubicacionesExtintoresCompartidas = ubicaciones != null
+            ? new List<UbicacionExtintorCompartida>(ubicaciones)
+            : new List<UbicacionExtintorCompartida>();
+        ubicacionesExtintoresCalculadas = true;
+    }
+
+    private void ReiniciarUbicacionesExtintorCompartidas()
+    {
+        ubicacionesExtintoresCompartidas = null;
+        ubicacionesExtintoresCalculadas = false;
+    }
 
     // ──────────────────────────────────────────────────────────
     // UNITY CALLBACKS
@@ -486,6 +529,7 @@ public class PCGPabellonUniversitario : MonoBehaviour
         StopAllCoroutines();
         pisosGenerados.Clear();
         clasificacionHabitacionesCentral = null;
+        ReiniciarUbicacionesExtintorCompartidas();
 
         List<GameObject> toDestroy = new List<GameObject>();
         for (int i = transform.childCount - 1; i >= 0; i--)

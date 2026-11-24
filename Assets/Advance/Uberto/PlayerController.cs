@@ -9,6 +9,7 @@ using UnityEngine.XR;
 [RequireComponent(typeof(CharacterController))]
 public sealed class PlayerController : MonoBehaviour
 {
+    private const float NoHeadsetControllerHeight = 1.70f;
     private const float MinimumControllerHeight = 1.20f;
     private const float MaximumControllerHeight = 2.20f;
 
@@ -363,10 +364,10 @@ public sealed class PlayerController : MonoBehaviour
         if (characterController == null)
             return;
 
-        // Room-scale head tracking supplies the user's actual eye height. Keep the
-        // capsule aligned to that height instead of forcing a fixed 1.70 m camera.
-        float controllerHeight = MinimumControllerHeight;
-        if (headTransform != null)
+        // Use a fixed average adult height when there is no tracked HMD. In VR,
+        // preserve the existing room-scale height derived from the user's head pose.
+        float controllerHeight = NoHeadsetControllerHeight;
+        if (headTransform != null && HasTrackedHeadset())
         {
             float headHeight = characterController.transform.InverseTransformPoint(headTransform.position).y;
             controllerHeight = Mathf.Clamp(headHeight + 0.10f, MinimumControllerHeight, MaximumControllerHeight);
@@ -375,6 +376,16 @@ public sealed class PlayerController : MonoBehaviour
         characterController.height = controllerHeight;
         float maximumStepOffset = Mathf.Max(0f, controllerHeight - characterController.radius * 2f);
         characterController.stepOffset = Mathf.Min(stepOffset, maximumStepOffset);
+    }
+
+    private bool HasTrackedHeadset()
+    {
+        if (!headDevice.isValid)
+            headDevice = InputDevices.GetDeviceAtXRNode(XRNode.Head);
+
+        return headDevice.isValid &&
+               headDevice.TryGetFeatureValue(CommonUsages.isTracked, out bool isTracked) &&
+               isTracked;
     }
 
     private void UpdateCharacterControllerCenter()

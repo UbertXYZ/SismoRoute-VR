@@ -175,7 +175,7 @@ public class ControladorNivel : MonoBehaviour
 
         RecopilarFocosYBloqueos();
         AveriarLaMitadDeFocos();
-        ActivarBloqueosIntercalados();
+        PermitirActivacionBloqueosIntercalados();
 
         tiempoSismo = 0f;
         if (cronometro != null)
@@ -352,7 +352,7 @@ public class ControladorNivel : MonoBehaviour
         }
     }
 
-    private void ActivarBloqueosIntercalados()
+    private void PermitirActivacionBloqueosIntercalados()
     {
         DesactivarTodosLosBloqueos();
         if (bloqueosPorPiso.Count < 2)
@@ -388,9 +388,9 @@ public class ControladorNivel : MonoBehaviour
             for (int posicion = 0; posicion < escaleras.Count; posicion++)
             {
                 bool usarSeleccion = (alternancia % 2) == 0;
-                bool activar = seleccionadas.Contains(posicion) == usarSeleccion;
-                if (activar)
-                    StartCoroutine(ActivarEnSiguienteFrame(escaleras[posicion]));
+                bool permitirActivacion = seleccionadas.Contains(posicion) == usarSeleccion;
+                if (permitirActivacion)
+                    PermitirActivacionBloqueo(escaleras[posicion]);
                 else
                     DesactivarBloqueo(escaleras[posicion]);
             }
@@ -398,16 +398,14 @@ public class ControladorNivel : MonoBehaviour
         }
     }
 
-    private IEnumerator ActivarEnSiguienteFrame(BloqueoEscalera bloqueo)
+    private static void PermitirActivacionBloqueo(BloqueoEscalera bloqueo)
     {
         if (bloqueo == null)
-            yield break;
+            return;
 
         bloqueo.activarAlIniciar = false;
+        bloqueo.PermitirActivacionPorSismo();
         bloqueo.enabled = true;
-        yield return null; // Deja que BloqueoBase.Start prepare los colliders antes de activar.
-        if (bloqueo != null)
-            bloqueo.ActivarDesdeControlador();
     }
 
     private static void DesactivarBloqueo(BloqueoEscalera bloqueo)
@@ -416,6 +414,7 @@ public class ControladorNivel : MonoBehaviour
             return;
 
         bloqueo.activarAlIniciar = false;
+        bloqueo.RevocarActivacionPorSismo();
         if (bloqueo.colliderBloqueo != null)
             bloqueo.colliderBloqueo.enabled = false;
         if (bloqueo.obstaculoNavMesh != null)

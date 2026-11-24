@@ -43,6 +43,9 @@ public class PisoConfig : MonoBehaviour
     public float grosorLosaSuperiorHabitacion = 0f;
     [Min(0f)] public float espacioColumnasPupitres = 0.8f;
     [Min(0f)] public float espacioCaminoHabitacion = 1f;
+    [Header("Extintores")]
+    public GameObject cajaExtintorPrefab;
+    [Min(0f)] public float alturaBaseExtintor = 1f;
     [Header("Escalera Config")]
     public GameObject escaleraPrefab;
     public bool cuatroEscaleras;
@@ -55,6 +58,7 @@ public class PisoConfig : MonoBehaviour
 
     private int[,] clasificacionHabitacionesCompartida;
     private int[,] clasificacionCentralGenerada;
+    [System.NonSerialized] private PCGPabellonUniversitario generadorEdificio;
     private bool preparacionIniciada;
     private bool preparacionFinalizada;
     private bool elementosEscaleraYBloquesGenerados;
@@ -108,6 +112,7 @@ public class PisoConfig : MonoBehaviour
         this.alturaNivel = alturaNivel;
         this.alturaPisos = alturaPisos;
         this.cuatroEscaleras = cuatroEscaleras;
+        generadorEdificio = null;
         esPrimerPiso = esPrimero;
         esUltimoPiso = esUltimo;
         ReiniciarEstadoGeneracion();
@@ -124,6 +129,7 @@ public class PisoConfig : MonoBehaviour
 
         Configurar(indicePiso, alturaNivel, generador.alturaPisos, cuatroEscaleras,
             indicePiso == 0, indicePiso == generador.numeroPisos - 1);
+        generadorEdificio = generador;
 
         techoPisoPrefab = generador.techoPisoPrefab;
         losaPrefab = generador.losaPrefab;
@@ -548,7 +554,144 @@ public class PisoConfig : MonoBehaviour
                 esParedVidrioEste: enPisosConVidrio, esUltimoPiso: esUltimoPiso);
         }
 
+        GenerarExtintoresBloquesExtremos();
         elementosEscaleraYBloquesGenerados = true;
+    }
+
+    private void GenerarExtintoresBloquesExtremos()
+    {
+        if (cajaExtintorPrefab == null)
+        {
+            Debug.LogWarning("PisoConfig no tiene asignado el prefab de CajaExtintor.", this);
+            return;
+        }
+
+        List<PCGPabellonUniversitario.UbicacionExtintorCompartida> ubicaciones;
+        if (generadorEdificio != null
+            && generadorEdificio.IntentarObtenerUbicacionesExtintorCompartidas(out ubicaciones))
+        {
+            InstanciarExtintoresCompartidos(ubicaciones);
+            return;
+        }
+
+        List<BloqueHabitacion> bloquesNorte = new List<BloqueHabitacion>();
+        List<BloqueHabitacion> bloquesSur = new List<BloqueHabitacion>();
+        BloqueHabitacion[] bloques = GetComponentsInChildren<BloqueHabitacion>(true);
+        foreach (BloqueHabitacion bloque in bloques)
+        {
+            if (bloque == null || !bloque.esBloqueEscalera || bloque.habitaciones == null || bloque.habitaciones.Count == 0)
+                continue;
+
+            float zLocal = transform.InverseTransformPoint(bloque.transform.position).z;
+            if (zLocal > 0f)
+                bloquesNorte.Add(bloque);
+            else if (zLocal < 0f)
+                bloquesSur.Add(bloque);
+        }
+
+        bool crearEnNorte = cuatroEscaleras || largoPabellon > 32f;
+        ubicaciones = new List<PCGPabellonUniversitario.UbicacionExtintorCompartida>(2);
+        CalcularExtintorEnBloqueAleatorio(bloquesSur, "Sur", ubicaciones);
+        if (crearEnNorte)
+            CalcularExtintorEnBloqueAleatorio(bloquesNorte, "Norte", ubicaciones);
+
+        if (generadorEdificio != null)
+        {
+            generadorEdificio.GuardarUbicacionesExtintorCompartidas(ubicaciones);
+            generadorEdificio.IntentarObtenerUbicacionesExtintorCompartidas(out ubicaciones);
+        }
+
+        InstanciarExtintoresCompartidos(ubicaciones);
+    }
+
+    private void CalcularExtintorEnBloqueAleatorio(
+        List<BloqueHabitacion> candidatos,
+        string extremo,
+        List<PCGPabellonUniversitario.UbicacionExtintorCompartida> ubicaciones)
+    {
+        if (candidatos == null || candidatos.Count == 0)
+        {
+            Debug.LogWarning($"No se encontró un bloque de escalera válido en el extremo {extremo} del piso {indicePiso + 1}.", this);
+            return;
+        }
+
+        BloqueHabitacion bloque = candidatos[Random.Range(0, candidatos.Count)];
+        HabitacionConfig habitacion = ObtenerHabitacionMasIzquierdaYSuperior(bloque);
+        if (habitacion == null)
+            return;
+
+        bool pasilloEnFrontal = bloque.pasilloEnBordeFrontal;
+        bool pasilloEnTrasera = bloque.pasilloEnBordeTrasero;
+        if (pasilloEnFrontal == pasilloEnTrasera)
+        {
+            Debug.LogWarning($"El bloque {bloque.name} no tiene un único pasillo X exterior identificable.", bloque);
+            return;
+        }
+
+        Transform paredTransform = pasilloEnFrontal ? habitacion.paredFrontal : habitacion.paredTrasera;
+        ParedConfig pared = paredTransform != null ? paredTransform.GetComponent<ParedConfig>() : null;
+        if (pared == null || pared.cantidadPuertas != 1 || pared.puerta1 == null)
+        {
+            Debug.LogWarning($"La pared del pasillo X de {habitacion.name} no tiene exactamente una puerta utilizable.", habitacion);
+            return;
+        }
+
+        Vector3 puertaLocal = transform.InverseTransformPoint(pared.puerta1.transform.position);
+        Vector3 paredLocal = transform.InverseTransformPoint(pared.transform.position);
+        Vector3 bordeIzquierdoMundo = habitacion.transform.TransformPoint(new Vector3(-habitacion.ancho / 2f, 0f, 0f));
+        Vector3 bordeIzquierdoLocal = transform.InverseTransformPoint(bordeIzquierdoMundo);
+        Vector3 direccionPasilloMundo = pasilloEnFrontal ? habitacion.transform.forward : -habitacion.transform.forward;
+        Vector3 direccionPasilloLocal = transform.InverseTransformDirection(direccionPasilloMundo).normalized;
+
+        float x = (puertaLocal.x + bordeIzquierdoLocal.x) * 0.5f;
+        float y = transform.InverseTransformPoint(habitacion.transform.position).y
+            + alturaBaseExtintor;
+        // El pivote del gabinete está en su cara trasera: apóyala en la cara
+        // exterior de la pared y deja que el cuerpo sobresalga hacia el pasillo.
+        float z = paredLocal.z + direccionPasilloLocal.z * (pared.grosor / 2f);
+
+        float rotacionY = direccionPasilloLocal.z >= 0f ? 0f : 180f;
+        ubicaciones.Add(new PCGPabellonUniversitario.UbicacionExtintorCompartida(
+            new Vector3(x, y, z), rotacionY));
+    }
+
+    private void InstanciarExtintoresCompartidos(
+        List<PCGPabellonUniversitario.UbicacionExtintorCompartida> ubicaciones)
+    {
+        if (ubicaciones == null)
+            return;
+
+        for (int i = 0; i < ubicaciones.Count; i++)
+        {
+            GameObject instancia = Instantiate(cajaExtintorPrefab, transform);
+            instancia.name = $"Extintor_Piso{indicePiso + 1}_{i + 1}";
+            instancia.transform.localPosition = ubicaciones[i].posicionLocal;
+            instancia.transform.localRotation = Quaternion.Euler(0f, ubicaciones[i].rotacionY, 0f);
+        }
+    }
+
+    private HabitacionConfig ObtenerHabitacionMasIzquierdaYSuperior(BloqueHabitacion bloque)
+    {
+        HabitacionConfig resultado = null;
+        float menorX = float.PositiveInfinity;
+        float mayorZ = float.NegativeInfinity;
+
+        foreach (HabitacionConfig habitacion in bloque.habitaciones)
+        {
+            if (habitacion == null)
+                continue;
+
+            Vector3 posicionLocal = transform.InverseTransformPoint(habitacion.transform.position);
+            if (posicionLocal.x < menorX - 0.001f
+                || (Mathf.Abs(posicionLocal.x - menorX) <= 0.001f && posicionLocal.z > mayorZ))
+            {
+                resultado = habitacion;
+                menorX = posicionLocal.x;
+                mayorZ = posicionLocal.z;
+            }
+        }
+
+        return resultado;
     }
 
     private void GenerarPasillosInteriores()

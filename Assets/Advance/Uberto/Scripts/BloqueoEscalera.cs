@@ -7,6 +7,7 @@ using Unity.XR.CoreUtils;
 public class BloqueoEscalera : BloqueoBase
 {
     private bool decisionTomada;
+    private bool activacionPermitidaPorSismo;
 
     [Header("Animación de derrumbe")]
     [Tooltip("Clips de EscaleraAnim.fbx, uno por cada parte animada.")]
@@ -39,27 +40,32 @@ public class BloqueoEscalera : BloqueoBase
     /// <summary>Activa el bloqueo una sola vez al entrar un actor válido en ColliderDeteccion.</summary>
     public void IntentarActivar(Collider actor)
     {
-        // Solo el controlador habilita los bloqueos elegidos para este sismo.
-        if (!enabled || !gameObject.activeInHierarchy || decisionTomada || actor == null)
+        // El controlador solo abre esta puerta lógica al comenzar el sismo.
+        // El derrumbe se inicia cuando el actor entra en ColliderDeteccion.
+        if (!enabled || !gameObject.activeInHierarchy || !activacionPermitidaPorSismo
+            || decisionTomada || actor == null)
             return;
 
-        bool esNpc = actor.GetComponentInParent<NPCComportamiento>() != null;
         bool esJugador = actor.GetComponentInParent<XROrigin>() != null;
-        if (!esNpc && !esJugador)
+        if (!esJugador)
             return;
 
         decisionTomada = true;
+        activacionPermitidaPorSismo = false;
         Activar();
     }
 
-    /// <summary>Entrada para ControladorNivel: respeta la misma regla de activación única.</summary>
-    public void ActivarDesdeControlador()
+    /// <summary>El controlador habilita la activación por contacto cuando inicia el sismo.</summary>
+    public void PermitirActivacionPorSismo()
     {
-        if (!enabled || !gameObject.activeInHierarchy || decisionTomada)
-            return;
+        if (!decisionTomada)
+            activacionPermitidaPorSismo = true;
+    }
 
-        decisionTomada = true;
-        Activar();
+    /// <summary>Revoca el permiso antes del sismo o para las escaleras no seleccionadas.</summary>
+    public void RevocarActivacionPorSismo()
+    {
+        activacionPermitidaPorSismo = false;
     }
 
     protected override IEnumerator Ejecutar()
