@@ -44,8 +44,39 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ccb761b1dee06c2448a486c6d3768ecb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  bloqueos:
-  - bloqueo: {fileID: 0}
-    claseBloqueo: 0
-    decisionTomada: 0
-    activado: 0
+  techoPisoPrefab: {fileID: 0}
+  losaPrefab: {fileID: 0}
+  indicePiso: 0
+  alturaNivel: 0
+  alturaPisos: 0
+  grosorPisos: 0.25
+  grosorPared: 0.2
+  grosorParedVidrio: 0.05
+  anchoPabellon: 12
+  largoPabellon: 48
+  hayPasilloZ: 0
+  esPrimerPiso: 0
+  esUltimoPiso: 0
+  bloqueHabitacionPrefab: {fileID: 0}
+  pasilloPrefab: {fileID: 0}
+  anchoPasillos: 4
+  grosorLosaInferiorPasillo: 0
+  grosorLosaSuperiorPasillo: 0
+  habitacionPrefab: {fileID: 0}
+  pupitreProfesorPrefab: {fileID: 0}
+  pupitreEstudiantesPrefab: {fileID: 0}
+  limiteCentralHabitacionZ: 10
+  limiteCentralHabitacionX: 8
+  grosorLosaInferiorHabitacion: 0
+  grosorLosaSuperiorHabitacion: 0
+  espacioColumnasPupitres: 0.8
+  espacioCaminoHabitacion: 1
+  cajaExtintorPrefab: {fileID: 7249464873966424456, guid: 6bfa1e5770d0b054fa26b0efdced1106, type: 3}
+  alturaBaseExtintor: 1
+  escaleraPrefab: {fileID: 0}
+  cuatroEscaleras: 0
+  anchoEscalera: 7
+  largoEscalera: 5
+  limiteEscaleraHabitacionX: 7
+  limiteEscaleraHabitacionZ: 5
+  bloqueos: []

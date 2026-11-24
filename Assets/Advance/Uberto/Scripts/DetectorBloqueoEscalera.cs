@@ -19,4 +19,13 @@ public class DetectorBloqueoEscalera : MonoBehaviour
         if (bloqueo != null)
             bloqueo.IntentarActivar(other);
     }
+
+    private void OnTriggerStay(Collider other)
+    {
+        if (bloqueo == null)
+            bloqueo = GetComponentInParent<BloqueoEscalera>();
+
+        if (bloqueo != null)
+            bloqueo.IntentarActivar(other);
+    }
 }

@@ -1,2 +1,20 @@
 fileFormatVersion: 2
 guid: ccb761b1dee06c2448a486c6d3768ecb
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - techoPisoPrefab: {instanceID: 0}
+  - losaPrefab: {instanceID: 0}
+  - bloqueHabitacionPrefab: {instanceID: 0}
+  - pasilloPrefab: {instanceID: 0}
+  - habitacionPrefab: {instanceID: 0}
+  - pupitreProfesorPrefab: {instanceID: 0}
+  - pupitreEstudiantesPrefab: {instanceID: 0}
+  - cajaExtintorPrefab: {fileID: 7249464873966424456, guid: 6bfa1e5770d0b054fa26b0efdced1106, type: 3}
+  - escaleraPrefab: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
