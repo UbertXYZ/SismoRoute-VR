@@ -36,13 +36,22 @@ public static class MenuBloqueosJosue
         AssetDatabase.DeleteAsset(CarpetaEscenas + "/PruebaBloqueos"); // NavMesh viejo de la copia anterior
         AssetDatabase.CopyAsset(EscenaPrincipal, EscenaPrueba); // copia: la escena de Uberto no se toca
         var escena = EditorSceneManager.OpenScene(EscenaPrueba);
-        GenerarEdificioYNavMesh();
+        // Desde que Uberto guarda el edificio y su NavMesh dentro de Prueba01, no hace falta regenerarlos:
+        // solo se hace si el edificio de la copia esta vacio.
+        if (!EdificioYaGenerado()) GenerarEdificioYNavMesh();
         AgregarGenerador();
         EditorSceneManager.SaveScene(escena);
         Debug.Log("[Bloqueos Josue] Escena de prueba lista: " + EscenaPrueba + " -> presiona Play.");
     }
 
-    // Prueba01 (en main) NO tiene guardado el edificio: el PCG de Uberto esta vacio
+    static bool EdificioYaGenerado()
+    {
+        foreach (var mb in Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
+            if (mb != null && mb.GetType().Name == "PCGPabellonUniversitario") return mb.transform.childCount > 0;
+        return false;
+    }
+
+    // (Antes) Prueba01 en main NO tenia guardado el edificio: el PCG de Uberto esta vacio
     // (pisosGenerados = None) y solo quedo el NavMesh horneado. Por eso el jugador caia
     // y los NPC caminaban en el aire. Aqui se genera el edificio en la COPIA y se vuelve
     // a hornear el NavMesh, guardandolo dentro de la carpeta de Josue.

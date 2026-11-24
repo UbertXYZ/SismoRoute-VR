@@ -32,7 +32,7 @@ public class GeneradorBloqueosAleatorios : MonoBehaviour
     [Range(0f, 1f)] public float probabilidadFuego = 0.5f;
 
     [Header("Cantidad y azar")]
-    [Tooltip("Minimo y maximo de bloqueos por partida (se sortea un numero entre ambos).")]
+    [Tooltip("Plan B (sin PisoConfig): minimo y maximo de bloqueos en TODO el edificio. Con PisoConfig se usa Bloqueos Por Piso.")]
     public Vector2Int cantidadBloqueos = new Vector2Int(3, 6);
     [Tooltip("Distancia minima (m) entre dos bloqueos del mismo piso.")]
     public float separacionMinima = 7f;
@@ -47,7 +47,15 @@ public class GeneradorBloqueosAleatorios : MonoBehaviour
     public bool usarPuntosBloqueo = true;
     [Tooltip("Reutiliza la posicion de los fuego/bloqueo que ya estan en la escena (los originales se apagan y aqui se sortea de nuevo su tipo).")]
     public bool usarBloqueosExistentes = true;
-    [Tooltip("Genera puntos a lo largo de los pasillos del PCG de Uberto (PasilloConfig).")]
+    [Tooltip("Usa el PisoConfig que Uberto agrega a cada piso (ancho/largo del pabellon, pasillos, escaleras, indice de piso) para ubicar los pasillos y repartir los bloqueos POR PISO.")]
+    public bool usarPisoConfig = true;
+    [Tooltip("Minimo y maximo de bloqueos que se sortean EN CADA PISO (solo con PisoConfig). El total es la suma.")]
+    public Vector2Int bloqueosPorPiso = new Vector2Int(0, 2);
+    [Tooltip("Permite bloqueos en la planta baja (PisoConfig.esPrimerPiso).")]
+    public bool incluirPlantaBaja = true;
+    [Tooltip("Distancia (m) que se deja libre alrededor de la boca de cada escalera (las escaleras las bloquea el sistema de Uberto).")]
+    public float margenEscaleras = 1.5f;
+    [Tooltip("Plan B si la escena no tiene PisoConfig: genera puntos a lo largo de los PasilloConfig sueltos.")]
     public bool usarPasillosGenerados = true;
     public float espaciadoEnPasillo = 6f;
     public float margenExtremosPasillo = 2.5f;
@@ -78,8 +86,6 @@ public class GeneradorBloqueosAleatorios : MonoBehaviour
     public float distanciaMinimaJugador = 3.5f;
     [Tooltip("Antes de activar, comprobar que el jugador (donde este) aun tenga salida.")]
     public bool comprobarRutaDesdeJugador = true;
-    [Tooltip("Apaga el ControladorBloqueos de Uberto para que no active bloqueos sin comprobar la ruta.")]
-    public bool desactivarControladorBloqueosOriginal = true;
 
     [Header("Pruebas")]
     [Tooltip("F6 = volver a sortear los bloqueos, F7 = activarlos todos ya, F8 = iniciar el sismo real (TV + alarma). Solo en el Editor.")]
@@ -94,6 +100,7 @@ public class GeneradorBloqueosAleatorios : MonoBehaviour
         public Quaternion rotacion;
         public TipoBloqueoJosue tipo;
         public string origen;
+        public int piso = -1;   // PisoConfig.indicePiso (-1 = no viene de un piso)
     }
 
     class Bloqueo
@@ -146,10 +153,6 @@ public class GeneradorBloqueosAleatorios : MonoBehaviour
         if (semilla != 0) Random.InitState(semilla);
         ResolverReferencias();
 
-        if (desactivarControladorBloqueosOriginal)
-            foreach (var c in FindObjectsByType<ControladorBloqueos>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-                c.enabled = false;
-
         _hayNavMesh = NavMesh.CalculateTriangulation().vertices.Length > 0;
 
         RecolectarCandidatos();
@@ -169,13 +172,28 @@ public class GeneradorBloqueosAleatorios : MonoBehaviour
         // Garantia 2 (siempre): cada bloqueo deja sus dos lados conectados por OTRO camino,
         // asi nunca se pierde una conexion que existia (sirve aunque el NavMesh este incompleto).
 
-        int objetivo = Random.Range(cantidadBloqueos.x, Mathf.Max(cantidadBloqueos.x, cantidadBloqueos.y) + 1);
+        // Si hay PisoConfig, se sortea cuantos bloqueos lleva CADA piso; los puntos manuales (PuntoBloqueo) no tienen tope por piso.
+        var objetivoPiso = new Dictionary<int, int>();
+        var cuentaPiso = new Dictionary<int, int>();
+        int sueltos = 0;
+        foreach (var c in _candidatos)
+        {
+            if (c.piso < 0) { sueltos++; continue; }
+            if (objetivoPiso.ContainsKey(c.piso)) continue;
+            objetivoPiso[c.piso] = Random.Range(bloqueosPorPiso.x, Mathf.Max(bloqueosPorPiso.x, bloqueosPorPiso.y) + 1);
+            cuentaPiso[c.piso] = 0;
+        }
+        bool modoPiso = objetivoPiso.Count > 0;
+        int objetivo;
+        if (modoPiso) { objetivo = sueltos; foreach (var v in objetivoPiso.Values) objetivo += v; }
+        else objetivo = Random.Range(cantidadBloqueos.x, Mathf.Max(cantidadBloqueos.x, cantidadBloqueos.y) + 1);
         _descartados = 0;
         _sinVerificar = 0;
 
         foreach (var c in _candidatos)
         {
             if (_bloqueos.Count >= objetivo) break;
+            if (modoPiso && c.piso >= 0 && cuentaPiso[c.piso] >= objetivoPiso[c.piso]) continue;
             if (MuyCercaDeOtro(c.posicion)) continue;
 
             TipoBloqueoJosue tipo = ElegirTipo(c.tipo);
@@ -240,6 +258,7 @@ public class GeneradorBloqueosAleatorios : MonoBehaviour
             if (tipo == TipoBloqueoJosue.Fuego && go.GetComponentInChildren<FuegoApagable>(true) == null)
                 go.AddComponent<FuegoApagable>();
             _bloqueos.Add(b);
+            if (modoPiso && c.piso >= 0) cuentaPiso[c.piso]++;
 
             if (mostrarLog) Debug.Log("[Bloqueos Josue] + " + tipo + " en " + c.origen + " " + pos.ToString("F1"));
         }
@@ -248,7 +267,14 @@ public class GeneradorBloqueosAleatorios : MonoBehaviour
         foreach (var b in _bloqueos)
             if (b.obstaculo != null) EncenderObstaculo(b.obstaculo, false);
 
-        Debug.Log("[Bloqueos Josue] " + _bloqueos.Count + " bloqueos colocados (objetivo " + objetivo + ", " +
+        string detallePisos = "";
+        if (modoPiso)
+        {
+            var pisos = new List<int>(cuentaPiso.Keys); pisos.Sort();
+            foreach (int k in pisos) detallePisos += " P" + k + ":" + cuentaPiso[k] + "/" + objetivoPiso[k];
+            detallePisos = " | por piso (colocados/sorteados):" + detallePisos;
+        }
+        Debug.Log("[Bloqueos Josue] " + _bloqueos.Count + " bloqueos colocados (objetivo " + objetivo + detallePisos + ", " +
                   _candidatos.Count + " candidatos, " + _descartados + " descartados por cerrar el paso, " +
                   _sinVerificar + " sin pasillo verificable). Ruta inicio->salida en NavMesh: " +
                   (_rutaGlobal ? "SI" : "NO (se usa solo la garantia por pasillo)") + ". Modo de activacion: " + momento);
@@ -377,6 +403,7 @@ public class GeneradorBloqueosAleatorios : MonoBehaviour
             foreach (var b in FindObjectsByType<BloqueoBase>(FindObjectsInactive.Include, FindObjectsSortMode.None))
             {
                 if (b.transform.IsChildOf(transform)) continue;  // son mios
+                if (b is BloqueoEscalera) continue;               // las escaleras de Uberto las maneja su ControladorNivel
                 if (!b.gameObject.scene.IsValid()) continue;      // es un asset, no de la escena
                 Vector3 pos = b.transform.position;
                 b.gameObject.SetActive(false);                     // el original se apaga; aqui se sortea de nuevo
@@ -385,7 +412,17 @@ public class GeneradorBloqueosAleatorios : MonoBehaviour
             }
         }
 
-        if (usarPasillosGenerados)
+        int candidatosDePisos = 0;
+        if (usarPisoConfig)
+        {
+            foreach (var piso in FindObjectsByType<PisoConfig>(FindObjectsSortMode.None))
+            {
+                if (!incluirPlantaBaja && piso.esPrimerPiso) continue;
+                candidatosDePisos += CandidatosDePiso(piso);
+            }
+        }
+
+        if (usarPasillosGenerados && candidatosDePisos == 0)
         {
             foreach (var pc in FindObjectsByType<PasilloConfig>(FindObjectsSortMode.None))
             {
@@ -408,7 +445,65 @@ public class GeneradorBloqueosAleatorios : MonoBehaviour
         }
     }
 
-    void Agregar(Vector3 pos, Quaternion rot, TipoBloqueoJosue tipo, string origen)
+    // Calcula los pasillos de UN piso con las mismas formulas que usa PisoConfig para construirlos
+    // (variables: anchoPabellon, largoPabellon, anchoPasillos, largoEscalera, anchoEscalera, hayPasilloZ, cuatroEscaleras).
+    int CandidatosDePiso(PisoConfig p)
+    {
+        int antes = _candidatos.Count;
+        float minX = -p.anchoPabellon / 2f;
+        float minZ = -p.largoPabellon / 2f;
+        float maxZ = p.largoPabellon / 2f;
+
+        // Los dos pasillos largos (eje X), uno cerca de cada extremo del edificio
+        float zInf = minZ + p.largoEscalera + p.anchoPasillos / 2f;
+        float zSup = maxZ - p.largoEscalera - p.anchoPasillos / 2f;
+        PuntosDePasillo(p, new Vector3(0f, 0f, zInf), Vector3.right, p.anchoPabellon, "Pasillo_X_Inferior");
+        PuntosDePasillo(p, new Vector3(0f, 0f, zSup), Vector3.right, p.anchoPabellon, "Pasillo_X_Superior");
+
+        // Pasillo lateral (eje Z), solo en pabellones angostos
+        if (p.hayPasilloZ)
+        {
+            float inicioZ = minZ + p.largoEscalera + p.anchoPasillos;
+            float finZ = maxZ - p.largoEscalera - p.anchoPasillos;
+            PuntosDePasillo(p, new Vector3(minX + p.anchoPasillos / 2f, 0f, (inicioZ + finZ) / 2f), Vector3.forward,
+                            Mathf.Max(1f, finZ - inicioZ), "Pasillo_Z");
+        }
+        return _candidatos.Count - antes;
+    }
+
+    void PuntosDePasillo(PisoConfig p, Vector3 centroLocal, Vector3 ejeLocal, float longitud, string nombre)
+    {
+        Vector3 eje = p.transform.TransformDirection(ejeLocal); eje.y = 0f;
+        if (eje.sqrMagnitude < 0.01f) return;
+        eje.Normalize();
+        Quaternion rot = Quaternion.LookRotation(Vector3.Cross(Vector3.up, eje), Vector3.up); // el bloqueo cruza el pasillo
+
+        float mitad = longitud * 0.5f - margenExtremosPasillo;
+        float paso = Mathf.Max(1f, espaciadoEnPasillo);
+        bool alLargoDeX = Mathf.Abs(ejeLocal.x) > 0.5f;
+        string origen = "piso " + p.indicePiso + " " + nombre;
+
+        if (mitad <= 0f) { Agregar(p.transform.TransformPoint(centroLocal), rot, TipoBloqueoJosue.Aleatorio, origen, p.indicePiso); return; }
+
+        // El primer punto se corre al azar: cada partida cambia donde caen los puntos.
+        for (float d = -mitad + Random.Range(0f, paso); d <= mitad; d += paso)
+        {
+            Vector3 local = centroLocal + ejeLocal * d;
+            if (alLargoDeX && EnBocaDeEscalera(p, local.x)) continue;   // no tapar la entrada de las escaleras
+            Agregar(p.transform.TransformPoint(local), rot, TipoBloqueoJosue.Aleatorio, origen, p.indicePiso);
+        }
+    }
+
+    // Las escaleras ocupan [minX, minX+anchoEscalera] y, con cuatro escaleras, tambien [0, anchoEscalera].
+    bool EnBocaDeEscalera(PisoConfig p, float x)
+    {
+        float minX = -p.anchoPabellon / 2f;
+        if (x >= minX - margenEscaleras && x <= minX + p.anchoEscalera + margenEscaleras) return true;
+        if (p.cuatroEscaleras && x >= -margenEscaleras && x <= p.anchoEscalera + margenEscaleras) return true;
+        return false;
+    }
+
+    void Agregar(Vector3 pos, Quaternion rot, TipoBloqueoJosue tipo, string origen, int piso = -1)
     {
         if (_hayNavMesh)
         {
@@ -422,7 +517,7 @@ public class GeneradorBloqueosAleatorios : MonoBehaviour
         foreach (var c in _candidatos)
             if ((c.posicion - pos).sqrMagnitude < 1.5f * 1.5f) return; // repetido
 
-        _candidatos.Add(new Candidato { posicion = pos, rotacion = rot, tipo = tipo, origen = origen });
+        _candidatos.Add(new Candidato { posicion = pos, rotacion = rot, tipo = tipo, origen = origen, piso = piso });
     }
 
     // Lanza rayos a los lados para saber hacia donde es angosto el pasillo,
