@@ -6,7 +6,7 @@ Todo vive en `Assets/Advance/Josue/` (no toca carpetas de otros).
 |---|---|
 | `Extintor/Scripts` | `ExtintorJosue` (agarrable y rocía), `FuegoApagable` (se agrega al fuego de Jheeremy), `AudioProceduralJosue`, `AyudaPruebaExtintor` (texto en pantalla) |
 | `Extintor/Prefabs` | `Extintor`, `EstacionExtintor` (tablero + cartel + extintor puesto) |
-| `Senales/Prefabs` | 22 prefabs: 11 señales × versión `_Pared` y `_Poste` |
+| `Senales/Prefabs` | 10 prefabs: 5 señales × versión `_Pared` y `_Poste` (imágenes en `Senales/Texturas`) |
 | `Bloqueos` | Generador aleatorio de fuego/rocas que siempre deja salida |
 | `Editor` | Menús y generadores (solo Editor) |
 | `Escenas` | `PruebaExtintorSenales.unity` (se crea con el menú) |
@@ -34,17 +34,24 @@ Ajustes en el prefab `Extintor` (componente `ExtintorJosue`): alcance, ángulo, 
 - Jheeremy dejó **vacíos** los slots de audio de `fuego.prefab` y `bloqueo.prefab` (explosión, fuego en bucle, crujido, derrumbe) y no tiene grabaciones de fuego ni extintor. Por eso `FuegoApagable` rellena los slots de `FuegoAlto` con sonidos generados por código (explosión, crepitar) y el extintor usa un siseo generado. Si Jheeremy agrega audios reales, basta arrastrarlos a esos campos y se usan en su lugar.
 
 ## 4. Señales
-Prefabs en `Senales/Prefabs`: Salida, RutaDerecha/Izquierda/Arriba/Abajo, ZonaSegura, PuntoReunion, PrimerosAuxilios, Extintor, NoUsarAscensor, EscaleraEmergencia.
-- **`_Pared`**: solo el panel, pivote en su centro. **`_Poste`**: con poste, pivote en el suelo.
-- **El texto se lee por el lado −Z.** La flecha azul del gizmo debe apuntar **hacia la pared**.
+Solo estas 5 (salen de las imágenes de `Senales/Texturas`): **Botiquín**, **Extintor (PQS)**, **Atención: riesgo eléctrico**, **Zona segura en casos de sismos** y **Salida**.
+Prefabs en `Senales/Prefabs`: `Senal_<Nombre>_Pared` y `Senal_<Nombre>_Poste`.
+- **`_Pared`**: solo el cartel, pivote en su centro. **`_Poste`**: con poste, pivote en el suelo.
+- **La imagen se ve por el lado −Z.** La flecha azul del gizmo debe apuntar **hacia la pared**.
+- Para cambiar una imagen, reemplaza el `.png` (mismo nombre) y vuelve a crear los prefabs con el menú.
 
 Cómo ponerlas:
 - **Fácil:** selecciona el prefab en la ventana Project, apunta con la cámara de la vista **Scene** a la pared (o al suelo) y usa el menú **SismoRoute → Josue → Colocar prefab seleccionado donde mira la vista Scene**. Lo pega y lo gira solo.
 - **A mano:** arrástralo a la escena; para una pared a la que apunta la normal `n`, rotación `LookRotation(-n)`.
 - Funciona igual con `EstacionExtintor` y `Extintor`. Las paredes del edificio de Uberto ya tienen Collider.
 
-## 5. Bloqueos aleatorios (fuego + rocas)
-`Bloqueos/GeneradorBloqueosAleatorios`: agrégalo a un objeto vacío de la escena (se llenan solos los prefabs de Jheeremy). Sortea posición, tipo y momento, y rechaza cualquier bloqueo que deje sin paso un pasillo. Los fuegos que crea ya son apagables con el extintor. Teclas en el Editor: F6 re-sortea, F7 activa todos, F8 inicia el sismo.
+## 5. Bloqueos aleatorios (fuego + rocas) por piso
+`Bloqueos/GeneradorBloqueosAleatorios`: se agrega con el menú **SismoRoute → Bloqueos (Josue) → 2** o a mano a un objeto vacío (los prefabs de Jheeremy se llenan solos).
+- **Usa el `PisoConfig` de Uberto** (uno por piso): con `anchoPabellon`, `largoPabellon`, `anchoPasillos`, `largoEscalera`, `anchoEscalera`, `hayPasilloZ`, `cuatroEscaleras` e `indicePiso` calcula dónde están los pasillos de cada piso, igual que Uberto los construye.
+- **Sortea cuántos bloqueos lleva cada piso** (`Bloqueos Por Piso`, por defecto 0 a 2), el tipo (fuego o rocas), la posición y el momento. No pone bloqueos en la boca de las escaleras (esas las derrumba el sistema de Uberto, `BloqueoEscalera`).
+- **Siempre deja salida:** descarta cualquier bloqueo que deje un pasillo sin paso o cierre la ruta del inicio a la salida.
+- Los fuegos que crea se pueden apagar con el extintor (`FuegoApagable`).
+- Teclas en el Editor: `F6` re-sortea, `F7` activa todos, `F8` inicia el sismo.
 
 ## 6. Qué subir a git
 Solo `Assets/Advance/Josue/` (incluye los `.meta`). **No subas** lo que Unity cambia solo: `ProjectSettings/GraphicsSettings.asset`, `Assets/UniversalRenderPipelineGlobalSettings.asset*`, `Assets/_Recovery/0 (1).unity*` ni `.vscode/`.
